@@ -2,10 +2,12 @@
 
 ## Introduction
 
-We introduce the **Zoom City Carbon Model (ZCCM)**, an R-based tool for calculating net of CO2 fluxes from urban areas at high spatial and temporal resolutions. ZCCM incorporates major sources and sinks of carbon in cities, such as road traffic, buildings, human breathing, and vegetation and soils. This document presents **ZCCM::UHI**, which provides hourly estimates of air temperature whole-city level using local data. The **ZCCM::UHI** is divided into three files: **UHImodel**, and **UHI Geographic Information platform.** The *UHImodel* generates timeseries (.csv) and maps (.multipolylines) of traffic estimates and CO2 emissions, while the [UHI Geographic Information Platform](https://bymaxanjos.github.io/CO2-traffic-emissions/) communicates the outcomes of the ZCCM to users, stakeholders, research community, and public in general. This platform displays the outcomes of ZCCM in an interactive way through zoom CO2 maps and summary statistics of emissions, e.g., dashboard available on this [link](https://bymaxanjos.github.io/CO2-traffic-emissions/).
+We are excited to introduce the **Zoom City Carbon Model (ZCCM)**, an powerful tool that calculates net CO2 fluxes in urban areas at high spatial and temporal resolutions. ZCCM models various sources and sinks of carbon in cities such as road traffic, buildings, human breathing, vegetation and soils, together with the Urban Heat Island phenomenon.  
+As part of ZCCM, we present the **ZCCM::UHI**, which provides hourly interpolated air temperature data sourced from local air temperature readings, including community-sourced data. The **UHImodel** generates a timeseries (.csv) and multiple maps (.multipolylines) that showcase air temperature variation. The **UHI Geographic Information platform.** communicates the outcomes of the model in an interactive manner, enabling users, stakeholders, research community, and civil society to explore summary statistic, zoom maps of air temperature and dashboard that be accessed via this [link]
 
-The **ZCCM::UHImodel** is still undergoing peer-review and should used with caution. 
-Methodology is based on Anjos, M.; Meier, F. City Carbon Budget and hourly net CO2 fluxes at 0.01º resolution for informed climate action(in preparation).
+The **ZCCM::UHImodel** draws inspiration from A. Duarte Rocha's rSCOPE v1.0 evapotranspiration model, which can be found on Zenodo [code], https://doi.org/10.5281/zenodo.6204580, 2022.
+
+Please note that **ZCCM::UHImodel** is currently undergoing peer-review, and caution is advised when interpreting its ouctomes. Our methodology is based on Anjos, M.; Meier, F. City Carbon Budget and hourly net CO2 fluxes at 0.01º resolution for informed climate action(in preparation).
 
 ### People
 
@@ -20,3 +22,19 @@ This project is was financed in part by the Coordenação de Aperfeiçoamento de
 Please feel free to contact us if you have any questions or suggestions by emailing [maxanjos\@campus.ul.pt](mailto:maxanjos@campus.ul.pt). If you are interested in contributing to the development of the model, we welcome you to join our team.
 
 Happy coding!
+
+## Input and setting requirements
+
+To ensure the model runs correctly, it is necessary to load the following inputs:
+
+1.  Air temperature data .csv (required) with a minimum of four columns labeled *date*, *Latitude*, *Longitude*, *airT*. 
+2.  Other variables (optional) should have the same date column recommendation.
+
+Note that the model converts the date-time into a R-formatted version, e.g., "2023-03-13 11:00:00" or "2023-03-13".
+
+The following dataframe is presented as follows:
+
+```{r setup, include=TRUE}
+air_UCON %>% head(10)
+
+```
