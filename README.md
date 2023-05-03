@@ -36,5 +36,6 @@ The following dataframe is presented as follows:
 
 ```{r setup, include=TRUE}
 air_UCON %>% head(10)
-
 ```
+<img width="691" alt="Screenshot 2023-05-03 at 08 57 51" src="https://user-images.githubusercontent.com/94705218/235909499-82427b94-5f35-4e58-b08b-0418d6fb4f44.png">
+
