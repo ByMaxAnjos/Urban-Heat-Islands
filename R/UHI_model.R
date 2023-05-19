@@ -28,7 +28,7 @@ library(automap) # Automatize some (or all) parts of the gstat-workflow
 library(openair)
 library(recipes)
 library(timetk)
-
+library(terra)
 #Define your path
 #setwd("Path/")
 
@@ -52,6 +52,7 @@ air_cws_2018 <- air_cws_2018 %>%
 air_UCON <- fread("/Users/co2map/Documents/CO2CityMap/Berlin/Components/building/inputs/data/airT_UCON_2015_2022.csv") %>%
   rename(longitude = Longitude,
          latitude = Latitude)
+
 #================================================================
 #Define the region of int/project system in UTM
 #================================================================
@@ -92,12 +93,12 @@ isave if TRUE creates a new folder "ZCCM_Output" in you path and saves the raste
 '
 
 AirInterpolate <- function(idates,
-                           air_df = air_data,
+                           air_df = air_cws_2018,
                            roi = study_area,
-                           spRes = 100,
-                           impute = TRUE,
+                           spRes = 500,
+                           impute = FALSE,
                            varmodel = "Sph",
-                           isave = TRUE) {
+                           isave = FALSE) {
   imonth <- idates[1]
   iyear <- idates[2]
   
@@ -153,7 +154,7 @@ AirInterpolate <- function(idates,
       sp::proj4string(get_coord_df) <- sp::CRS("+proj=longlat +datum=WGS84")
       get_coord <- sp::spTransform(get_coord_df, mycrs)
       
-      grid_stations <- raster::raster(raster::extent(study_area), res = spRes)
+      grid_stations <- raster::raster(raster::extent(roi), res = spRes)
       raster::values(grid_stations) <- 1:raster::ncell(grid_stations)
       raster::crs(grid_stations) <- mycrs
       
@@ -161,10 +162,10 @@ AirInterpolate <- function(idates,
       my_grid <- raster::rasterToPoints(grid_stations, spatial = TRUE)
       sp::gridded(my_grid) <- TRUE
       my_grid <- methods::as(my_grid, "SpatialPixels")
+      
       vgm_air = gstat::variogram(object = airT ~ 1, data = get_coord)# set a variogram
       fit_var_air = gstat::fit.variogram(object = vgm_air, gstat::vgm(varmodel)) # fit a variogram
       fit_var_air$range[fit_var_air$range < 0] <- abs(fit_var_air$range)[2]
-      
       kriging_air = gstat::krige(airT ~ 1, locations = get_coord, newdata = my_grid,
                                  model = fit_var_air, debug.level = 0)
       kriging_air = raster::raster(kriging_air)
@@ -173,6 +174,8 @@ AirInterpolate <- function(idates,
       mydate <- data_model %>% distinct(date, .keep_all = FALSE) %>% as.data.frame()
       mydate <- gsub("[: -]", "" , mydate$date, perl=TRUE)
       names(kriging_air) <- paste0("airT_",mydate)
+
+      return(kriging_air)
       
       if(isave == TRUE) {
         
@@ -190,8 +193,6 @@ AirInterpolate <- function(idates,
         
       }
       
-      return(kriging_air)
-      
     }
     
     MapHour <- pbapply::pbapply(ihour, 1, model_hour)
@@ -208,8 +209,7 @@ AirInterpolate <- function(idates,
 job_airT <- apply(idates, 1, AirInterpolate) #Apply the function 
 job_airT_list <- unlist(job_airT) #Get the raster list
 job_airT_stack <- raster::stack(job_airT_list) #Or get raster stack
-qtm(job_airT_list[[5]]) #plot the map
-
+qtm(job_airT_list[[7]]) #plot the map
 
 
 
