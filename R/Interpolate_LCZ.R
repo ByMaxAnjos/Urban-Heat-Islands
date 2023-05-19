@@ -235,23 +235,23 @@ AirLCZidw <- function(idates,
           mydate <- gsub("[: -]", "" , mydate$date, perl=TRUE)
           names(idw_map) <- paste0("IDW_airT_",mydate)
           idw_map <- raster(rast(idw_map))
-          #return(idw_map)
+          return(idw_map)
 
-          # Resample air map
-          air_resample = raster::resample(idw_map, build)
-          #raster::writeRaster(air_resample, paste0("Building/outputs/maps/UHI/", mydate, "_UHI.TIF"), format="GTiff", overwrite = TRUE)
-          #Merge building with air raster
-          air_build <- as_tibble(rasterToPoints(air_resample)) %>% set_names(c("x", "y", "airT"))
-          build_df <- as_tibble(rasterToPoints(build))
-          build_model <- inner_join(build_df, air_build, by= c("x", "y")) %>%
-            mutate(hour = paste0(myhour))
-
-          #Calculate CO2 emissions
-          ECO2B <- ECO2build(build_model)
-          ECO2T_ras <- ECO2B %>% dplyr::select(x, y, ECO2_micro)
-          ECO2T_ras = raster::rasterFromXYZ(xyz = ECO2T_ras,crs = mycrs)
-          names(ECO2T_ras) <- paste0("CO2B_", mydate)
-          return(ECO2T_ras)
+          # # Resample air map
+          # air_resample = raster::resample(idw_map, build)
+          # #raster::writeRaster(air_resample, paste0("Building/outputs/maps/UHI/", mydate, "_UHI.TIF"), format="GTiff", overwrite = TRUE)
+          # #Merge building with air raster
+          # air_build <- as_tibble(rasterToPoints(air_resample)) %>% set_names(c("x", "y", "airT"))
+          # build_df <- as_tibble(rasterToPoints(build))
+          # build_model <- inner_join(build_df, air_build, by= c("x", "y")) %>%
+          #   mutate(hour = paste0(myhour))
+          # 
+          # #Calculate CO2 emissions
+          # ECO2B <- ECO2build(build_model)
+          # ECO2T_ras <- ECO2B %>% dplyr::select(x, y, ECO2_micro)
+          # ECO2T_ras = raster::rasterFromXYZ(xyz = ECO2T_ras,crs = mycrs)
+          # names(ECO2T_ras) <- paste0("CO2B_", mydate)
+          # return(ECO2T_ras)
       #Salve the map
 
           if(isave == TRUE) {
