@@ -63,26 +63,30 @@ air_UCON <- fread("inputs/data/airT_UCON_2015_2022.csv") %>%
 city <- "Berlin"
 mycrs <- "+proj=utm +zone=33 +datum=WGS84 +units=m +no_defs"
 
-study_area <- osmdata::getbb(city, format_out = "sf_polygon", limit = 1)$multipolygon %>%
-  st_as_sf() %>% # convert to sf object
-  st_transform(crs = mycrs)
-study_area <- st_make_valid(study_area)
+
+#get shp ROI
+shp_verify=osmdata::getbb(city, format_out = "sf_polygon", limit = 1)$polygon
+if(is.null(shp_verify)) {
+  study_area <- osmdata::getbb(city, format_out = "sf_polygon", limit = 1)$multipolygon# Try this first option and plot to see the city 
+  study_area <- st_make_valid(study_area) %>%  st_transform(crs = mycrs)
+} else {
+  study_area <- osmdata::getbb(city, format_out = "sf_polygon", limit = 1)$polygon# Try this first option and plot to see the city 
+  study_area <- st_make_valid(study_area) %>%  st_transform(crs = mycrs)
+}
 qtm(study_area) #plot map
 
-# study_area <- osmdata::getbb(city, format_out = "sf_polygon", limit = 1) %>% #orthewise try this one
-#   st_as_sf() %>% # convert to sf object
-#   st_transform(crs = mycrs)
-# study_area <- st_make_valid(study_area)
-# qtm(study_area) #plot map
 
 #================================================================
-#Load LCZ map
+#Load LCZ map 
 #================================================================
-lcz_map <- raster("LCZ/lcz_berlin2.tif")
+# Download the LCZ global map from https://zenodo.org/record/6364594/files/lcz_filter_v1.tif?download=1
+lcz_map <- raster::raster("/vsicurl/https://zenodo.org/record/6364594/files/lcz_filter_v1.tif?download=1") 
+
+lcz_map <- raster("/Users/co2map/Documents/CO2CityMap/Berlin/Components/Building/LCZ/lcz_berlin2.tif")
 lcz_map <- raster::projectRaster(lcz_map, crs = mycrs)
 
 #Building
-build <- raster::raster("building/inputs/raster/build100.tif")
+build <- raster::raster("/Users/co2map/Documents/CO2CityMap/Berlin/Components/building/inputs/raster/build100.tif")
 names(build) <- paste0("volume")
 
 
@@ -90,7 +94,7 @@ names(build) <- paste0("volume")
 #month <- c("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec")
 imonth <- c("feb")
 iyear <- c(2019)
-myday <- 2
+check_day <- 2
 idates <- expand.grid(imonth, iyear)
 
 #================================================================
@@ -105,35 +109,25 @@ varmodel is the variogram model type. It can be "Exp", "Sph", "Gau" or "Mat".
 isave if TRUE creates a new folder "ZCCM_Output" in you path and saves the rasters
 '
 
-AirLCZidw <- function(idates,
+AirInterpolateLCZ <- function(idates,
                            air_df = air_UCON,
                            roi = study_area,
                            spRes = 500,
+                           Kriging = TRUE,
+                           IDW = FALSE,
                            lcz = lcz_map,
-                           impute = FALSE,
-                           IDW = TRUE,
-                           evaluation = FALSE,
                            isave = FALSE) {
   imonth <- idates[1]
   iyear <- idates[2]
 
-  if(impute ==TRUE) {
-    air_df[air_df$airT == "NAN"] <- NA
-    air_recipe <- recipe(date ~., data = air_df) %>%
-      step_ts_impute(all_predictors(), -latitude, -longitude)
-    air_model <- air_recipe %>%
-      prep(air_df) %>%
-      bake(air_df)
-  } 
-
   #Pre=processing data
-  if(is.null(myday)) {
+  if(is.null(check_day)) {
     air_model <- air_df %>%
       openair::selectByDate(year = iyear, month = imonth) %>%
       na.omit()
   } else {
     air_model <- air_df %>%
-      openair::selectByDate(year = iyear, month = imonth, day = myday) %>%
+      openair::selectByDate(year = iyear, month = imonth, day = check_day) %>%
       na.omit()
   }
   
@@ -174,9 +168,6 @@ AirLCZidw <- function(idates,
     distinct(iday, .keep_all = FALSE) %>%
     expand.grid()
 
-
-  if(IDW == TRUE) {
-
     model_day <- function(iday) {
 
     myday <- iday[1]
@@ -197,7 +188,7 @@ AirLCZidw <- function(idates,
 
       data_model <- modelday %>%
         mutate(hour = lubridate::hour(date)) %>%
-        openair::selectByDate(hour = myhour)
+        openair::selectByDate(hour = myhour) %>% as_tibble()
 
         #Get station points
         shp_stations <- data_model %>%
@@ -208,13 +199,9 @@ AirLCZidw <- function(idates,
 
         #Intersect shp stations with lcz shp
         lcz_stations <- sf::st_intersection(shp_stations, lcz_shp)
-        #Create train and test sets
-        lcz_stations_split <- initial_split(lcz_stations)
-        lcz_stations_train <- training(lcz_stations_split)
-        lcz_stations_test <- testing(lcz_stations_split)
-
+       
         #Merge table to create a sf to model
-       lcz_poi_mod <- inner_join(lcz_poi_get,lcz_stations_train %>% as_tibble() %>%
+        lcz_poi_mod <- inner_join(lcz_poi_get,lcz_stations %>% as_tibble() %>%
                                   dplyr::select(lcz, station, airT), by=c("lcz")) %>%
           group_by(station) %>%
           mutate(FID_station=cur_group_id()) %>%
@@ -223,20 +210,42 @@ AirLCZidw <- function(idates,
         # Convert LCZ map to starts
         lcz_stars <- st_as_stars(iLCZ, dimensions = "XY")
         train_mod = st_join(lcz_poi_mod, st_as_sf(lcz_stars)) %>%
-          mutate(lcz = as.integer(lcz))
+          mutate(lcz = as.integer(lcz)) %>% 
+          dplyr::select(airT, lcz, geometry)
         train_mod = train_mod[!is.na(train_mod$lcz),]
         st_crs(lcz_stars) <- st_crs(train_mod)
 
-        #IDW
+        if(Kriging==TRUE) {
+          
+          ## [using ordinary kriging]
+          krige_vgm <- autofitVariogram(airT ~ lcz, as(train_mod, "Spatial"))$var_model
+          krige_mod = gstat(formula = airT ~ lcz, model = krige_vgm$var_model, data = train_mod)
+          krige_map = predict(krige_mod, newdata=lcz_stars, debug.level = 1)
+          krige_map = krige_map["var1.pred",,]
+          krige_map = raster::raster(rast(krige_map))
+          krige_map = raster::crop(krige_map, raster::extent(roi))
+          krige_map = raster::mask(krige_map, roi)
+          mydate <- data_model %>% distinct(date, .keep_all = FALSE)
+          mydate <- gsub("[: -]", "" , mydate$date, perl=TRUE)
+          names(krige_map) <- paste0("Krige_LCZ_", mydate)
+          return(krige_map)
+          
+        }
+        
+        if(IDW==TRUE) {
+        
+          #IDW
           idw_mod = gstat(formula = airT ~ 1, data = train_mod)
-          idw_map = predict(idw_mod, lcz_stars)
+          idw_map = predict(idw_mod, lcz_stars, debug.level = 0)
           idw_map = idw_map["var1.pred",,]
+          idw_map <- raster(rast(idw_map))
           mydate <- data_model %>% distinct(date, .keep_all = FALSE) %>% as.data.frame()
           mydate <- gsub("[: -]", "" , mydate$date, perl=TRUE)
-          names(idw_map) <- paste0("IDW_airT_",mydate)
-          idw_map <- raster(rast(idw_map))
+          names(idw_map) <- paste0("IDW_LCZ_",mydate)
           return(idw_map)
 
+        }
+        
           # # Resample air map
           # air_resample = raster::resample(idw_map, build)
           # #raster::writeRaster(air_resample, paste0("Building/outputs/maps/UHI/", mydate, "_UHI.TIF"), format="GTiff", overwrite = TRUE)
@@ -274,114 +283,23 @@ AirLCZidw <- function(idates,
 
           }
 
-         
         }
 
-    MapHour <- apply(ihour, 1, model_hour)
-    return(MapHour)
+    MapHour <- pbapply::pbapply(ihour, 1, model_hour)
+    UHIhour <- unlist(MapHour)
+    return(UHIhour)
 
     }
 
-    MapDay <- pbapply::pbapply(iday, 1, model_day)
-    #MapDay <- unlist(MapDay)
-    return(MapDay)
-
-  }
-
-  if(evaluation == TRUE) {
-
-    model_day <- function(iday) {
-
-      myday <- iday[1]
-
-      modelday <- air_model %>%
-        mutate(day = lubridate::day(date)) %>%
-        openair::selectByDate(day = myday)
-
-      #Downscale to hour
-      ihour <- modelday %>%
-        mutate(ihour = hour(date)) %>%
-        distinct(ihour, .keep_all = FALSE) %>%
-        expand.grid()
-
-      model_hour <- function(ihour) {
-
-        myhour <- ihour[1]
-
-        data_model <- modelday %>%
-          mutate(hour = lubridate::hour(date)) %>%
-          openair::selectByDate(hour = myhour)
-
-        #Get station points
-        shp_stations <- data_model %>%
-          distinct(latitude, longitude, .keep_all = T) %>%
-          dplyr::select(station, latitude, longitude, airT) %>%
-          sf::st_as_sf(coords = c("longitude", "latitude"), crs = 4326) %>%
-          st_transform(crs = mycrs) %>%
-          sf::st_intersection(roi)
-
-        #Intersect shp stations with lcz shp
-        lcz_stations <- sf::st_intersection(shp_stations, lcz_shp)
-        #Create train and test sets
-        lcz_stations_split <- initial_split(lcz_stations)
-        lcz_stations_train <- training(lcz_stations_split)
-        lcz_stations_test <- testing(lcz_stations_split)
-
-        #Merge table to create a sf to model
-        lcz_poi_mod <- inner_join(lcz_poi_get,lcz_stations_train %>% as_tibble() %>%
-                                    dplyr::select(lcz, station, airT), by=c("lcz")) %>%
-          group_by(station) %>%
-          mutate(FID_station=cur_group_id()) %>%
-          dplyr::select(-station, -lcz)
-
-        # Convert LCZ map to starts
-        lcz_stars <- st_as_stars(iLCZ, dimensions = "XY")
-        train_mod = st_join(lcz_poi_mod, st_as_sf(lcz_stars)) %>%
-          mutate(lcz = as.integer(lcz))
-        train_mod = train_mod[!is.na(train_mod$lcz),]
-        st_crs(lcz_stars) <- st_crs(train_mod)
-
-        #IDW
-        idw_mod = gstat(formula = airT ~ 1, data = train_mod)
-        idw_map = predict(idw_mod, lcz_stars)
-        idw_map = idw_map["var1.pred",,]
-        # mydate <- data_model %>% distinct(date, .keep_all = FALSE) %>% as.data.frame()
-        # mydate <- gsub("[: -]", "" , mydate$date, perl=TRUE)
-        names(idw_map) <- paste0("IDW_airT")
-
-        #Evaluation
-        idw_cv = gstat.cv(idw_mod, nfold = 5, verbose = FALSE)
-        idw_cv = st_as_sf(idw_cv)
-
-        #This is the RMSE value for the IDW interpolation with sampled points
-        rmse_sampled= data_model %>% distinct(date, .keep_all = FALSE) %>%
-          mutate(rmse_sampled = sqrt(sum((idw_cv$var1.pred - idw_cv$observed)^2)/nrow(idw_cv))) %>% as_tibble()
-
-        #This is the RMSE value for the IDW interpolation with original points testing
-        original=st_join(lcz_stations_test, st_as_sf(idw_map))
-        rmse_original= data_model %>% distinct(date, .keep_all = FALSE) %>%
-          mutate(rmse_original = sqrt(sum((original$IDW_airT - original$airT)^2)/nrow(original))) %>% as_tibble()
-        rmse <- inner_join(rmse_original, rmse_sampled, by="date")
-        return(rmse)
-      }
-
-      MapHour <- apply(ihour, 1, model_hour)
-      return(MapHour)
-
-    }
-
-    MapDay <- pbapply::pbapply(iday, 1, model_day)
-    #UHIday <- unlist(MapDay)
-    return(MapDay)
-
-  }
+    MapDay <- apply(iday, 1, model_day)
+    UHIday <- unlist(MapDay)
+    return(UHIday)
 
 }
 
-job_airT <- apply(idates, 1, AirLCZidw) #Apply the function
-job_airT_list <- unlist(job_airT) #Get the raster list
-job_airT_stack <- raster::stack(job_airT_list) #Or get raster stack
-qtm(job_airT_list[[12]]) #plot the map
+job_airT <- apply(idates, 1, AirInterpolateLCZ) #Apply the function
+job_airT_stack <- raster::stack(unlist(job_airT)) #Or get raster stack
+qtm(job_airT_stack[[c(19)]]) #plot the map
 
 
 

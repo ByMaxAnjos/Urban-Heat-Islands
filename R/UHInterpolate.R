@@ -29,6 +29,8 @@ library(openair)
 library(recipes)
 library(timetk)
 library(terra)
+library(tidymodels)
+library(stars)
 #Define your path
 #setwd("Path/")
 
@@ -61,24 +63,18 @@ air_UCON <- fread("/Users/co2map/Documents/CO2CityMap/Berlin/Components/building
 city <- "Berlin"
 mycrs <- "+proj=utm +zone=33 +datum=WGS84 +units=m +no_defs"
   
-study_area <- osmdata::getbb(city, format_out = "sf_polygon", limit = 1)$multipolygon %>%
-  st_as_sf() %>% # convert to sf object
-  st_transform(crs = mycrs)
-study_area <- st_make_valid(study_area)
+#get shp ROI
+shp_verify=osmdata::getbb(city, format_out = "sf_polygon", limit = 1)$polygon
+if(is.null(shp_verify)) {
+  study_area <- osmdata::getbb(city, format_out = "sf_polygon", limit = 1)$multipolygon# Try this first option and plot to see the city 
+  study_area <- st_make_valid(study_area) %>%  st_transform(crs = mycrs)
+} else {
+  study_area <- osmdata::getbb(city, format_out = "sf_polygon", limit = 1)$polygon# Try this first option and plot to see the city 
+  study_area <- st_make_valid(study_area) %>%  st_transform(crs = mycrs)
+}
+
 qtm(study_area) #plot map
 
-# study_area <- osmdata::getbb(city, format_out = "sf_polygon", limit = 1) %>% #orthewise try this one
-#   st_as_sf() %>% # convert to sf object
-#   st_transform(crs = mycrs)
-# study_area <- st_make_valid(study_area)
-# qtm(study_area) #plot map
-
-
-#define the period
-#month <- c("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec")
-imonth <- c("jul")
-iyear <- c(2018)
-idates <- expand.grid(imonth, iyear)
 
 #================================================================
 #Deploy the function for interpolation of air temperature
@@ -92,29 +88,36 @@ varmodel is the variogram model type. It can be "Exp", "Sph", "Gau" or "Mat".
 isave if TRUE creates a new folder "ZCCM_Output" in you path and saves the rasters
 '
 
-AirInterpolate <- function(idates,
-                           air_df = air_cws_2018,
+#define the period
+#month <- c("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec")
+imonth <- c("jul")
+iyear <- c(2018)
+check_day <- 3
+idates <- expand.grid(imonth, iyear)
+
+
+UHInterpolate <- function(idates,
+                           air_df = air_UCON,
                            roi = study_area,
-                           spRes = 500,
-                           impute = FALSE,
+                           spRes = 100,
+                           kriging = FALSE,
                            varmodel = "Sph",
-                           isave = FALSE) {
+                           IDW = TRUE,
+                           isave = TRUE) {
   imonth <- idates[1]
   iyear <- idates[2]
   
-  if(impute ==TRUE) {
-    air_df[air_df$airT == "NAN"] <- NA
-    air_recipe <- recipe(date ~., data = air_df) %>%
-      step_ts_impute(all_predictors(), -latitude, -longitude) 
-    air_model <- air_recipe %>%
-      prep(air_df) %>% 
-      bake(air_df)
-  }
-  
   #Pre=processing data
-  air_model <- air_df %>%
-    openair::selectByDate(year = iyear, month = imonth) %>% 
-    na.omit()
+  if(is.null(check_day)) {
+    air_model <- air_df %>%
+      openair::selectByDate(year = iyear, month = imonth) %>% 
+      na.omit()
+    
+  } else {
+    air_model <- air_df %>%
+      openair::selectByDate(year = iyear, month = imonth, day = check_day) %>% 
+      na.omit()
+  }
   
   #Downscale to hour
   iday <- air_model %>%
@@ -162,25 +165,28 @@ AirInterpolate <- function(idates,
       my_grid <- raster::rasterToPoints(grid_stations, spatial = TRUE)
       sp::gridded(my_grid) <- TRUE
       my_grid <- methods::as(my_grid, "SpatialPixels")
+     
+      if(kriging==TRUE) {
+        
+        ## [using ordinary kriging]
+        krige_mod <- autofitVariogram(airT ~ 1, get_coord)
+        krige_mod = gstat(formula = airT ~ 1, model = krige_mod$var_model, data =get_coord)
+        krige_map = predict(krige_mod, st_as_stars(raster(my_grid)))
+        krige_map = krige_map["var1.pred",,]
+        krige_map = raster::raster(rast(krige_map))
+        krige_map = raster::crop(krige_map, raster::extent(roi))
+        krige_map = raster::mask(krige_map, roi)
+        mydate <- data_model %>% distinct(date, .keep_all = FALSE) %>% as.data.frame()
+        mydate <- gsub("[: -]", "" , mydate$date, perl=TRUE)
+        names(krige_map) <- paste0("Krige_", mydate)
+        return(krige_map)
       
-      vgm_air = gstat::variogram(object = airT ~ 1, data = get_coord)# set a variogram
-      fit_var_air = gstat::fit.variogram(object = vgm_air, gstat::vgm(varmodel)) # fit a variogram
-      fit_var_air$range[fit_var_air$range < 0] <- abs(fit_var_air$range)[2]
-      kriging_air = gstat::krige(airT ~ 1, locations = get_coord, newdata = my_grid,
-                                 model = fit_var_air, debug.level = 0)
-      kriging_air = raster::raster(kriging_air)
-      kriging_air = raster::crop(kriging_air, raster::extent(roi))
-      kriging_air = raster::mask(kriging_air, roi)
-      mydate <- data_model %>% distinct(date, .keep_all = FALSE) %>% as.data.frame()
-      mydate <- gsub("[: -]", "" , mydate$date, perl=TRUE)
-      names(kriging_air) <- paste0("airT_",mydate)
-
-      return(kriging_air)
+      }
       
-      if(isave == TRUE) {
+      if(isave==TRUE & kriging==TRUE) {
         
         # Create a folder name using paste0
-        folder <- paste0("ZCCM_Output/")
+        folder <- paste0("UHI_Output/")
         
         # Check if the folder exists
         if (!dir.exists(folder)) {
@@ -188,28 +194,58 @@ AirInterpolate <- function(idates,
           dir.create(folder)
         }
         
-        file <- paste0(folder,iyear,imonth,myday,myhour,"AirT.TIF")
-        raster::writeRaster(kriging_air,file, format="GTiff", overwrite = TRUE)
+        file <- paste0(folder,iyear,imonth,myday,myhour,"Krige.TIF")
+        raster::writeRaster(krige_map,file, format="GTiff", overwrite = TRUE)
         
       }
       
+      
+      if(IDW==TRUE){
+        
+        #IDW
+        idw_mod = gstat(formula = airT ~ 1, data = get_coord)
+        idw_map = predict(idw_mod, st_as_stars(raster(my_grid)))
+        idw_map = idw_map["var1.pred",,]
+        idw_map = raster::raster(rast(idw_map))
+        idw_map = raster::crop(idw_map, raster::extent(roi))
+        idw_map = raster::mask(idw_map, roi)
+        mydate <- data_model %>% distinct(date, .keep_all = FALSE) %>% as.data.frame()
+        mydate <- gsub("[: -]", "" , mydate$date, perl=TRUE)
+        names(idw_map) <- paste0("IDW_", mydate)
+        return(idw_map)
+        
+      }
+      
+      if(isave == TRUE & IDW == TRUE) {
+        
+        # Create a folder name using paste0
+        folder <- paste0("UHI_Output/")
+        
+        # Check if the folder exists
+        if (!dir.exists(folder)) {
+          # Create the folder if it does not exist
+          dir.create(folder)
+        }
+        
+        file <- paste0(folder,iyear,imonth,myday,myhour,"IDW.TIF")
+        raster::writeRaster(idw_map,file, format="GTiff", overwrite = TRUE)
+        
+      }
     }
     
     MapHour <- pbapply::pbapply(ihour, 1, model_hour)
-    return(MapHour)
+    UHIhour <- unlist(MapHour)
+    return(UHIhour)
     
   }
   
   MapDay <- apply(iday, 1, model_day)
   UHIday <- unlist(MapDay)
-  return(MapDay)
+  return(UHIday)
   
 }
 
-job_airT <- apply(idates, 1, AirInterpolate) #Apply the function 
-job_airT_list <- unlist(job_airT) #Get the raster list
-job_airT_stack <- raster::stack(job_airT_list) #Or get raster stack
-qtm(job_airT_list[[7]]) #plot the map
-
-
+job_airT <- apply(idates, 1, UHInterpolate) #Apply the function 
+job_airT_stack <- raster::stack(unlist(job_airT)) #Or get raster stack
+qtm(job_airT_stack[[7]]) #plot the map
 
