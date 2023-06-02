@@ -76,6 +76,7 @@ if(is.null(shp_verify)) {
 qtm(study_area) #plot map
 
 
+
 #================================================================
 #Deploy the function for interpolation of air temperature
 #================================================================
@@ -99,7 +100,7 @@ idates <- expand.grid(imonth, iyear)
 UHInterpolate <- function(idates,
                            air_df = air_UCON,
                            roi = study_area,
-                           spRes = 100,
+                           spRes = 500,
                            kriging = FALSE,
                            varmodel = "Sph",
                            IDW = TRUE,
