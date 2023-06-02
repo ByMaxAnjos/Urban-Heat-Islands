@@ -2,12 +2,9 @@
 
 ## Introduction
 
-We are excited to introduce the **Zoom City Carbon Model (ZCCM)**, an powerful tool that calculates net CO2 fluxes in urban areas at high spatial and temporal resolutions. ZCCM models various sources and sinks of carbon in cities such as road traffic, buildings, human breathing, vegetation and soils, together with the Urban Heat Island phenomenon.  
-As part of ZCCM, we present the **ZCCM::UHI**, which provides hourly interpolated air temperature data sourced from local air temperature readings, including community-sourced data. The **UHImodel** generates a timeseries (.csv) and multiple maps (.multipolylines) that showcase air temperature variation. The **UHI Geographic Information platform.** communicates the outcomes of the model in an interactive manner, enabling users, stakeholders, research community, and civil society to explore summary statistic, zoom maps of air temperature and dashboard that be accessed via this [link]
+As part of **Zoom City Carbon Model (ZCCM)**, we present the **ZCCM::UHI**, a set of R functions which models Urban Heat Island at high-definition and provides hourly interpolated air temperature data sourced from local air temperature readings, including community-sourced data and Local Climate Zone. The **UHI Geographic Information platform** communicates the outcomes of the model in an interactive manner, enabling users, stakeholders, research community, and civil society to explore summary statistic, zoom maps of air temperature and dashboard that be accessed via this [link]
 
-The **ZCCM::UHImodel** draws inspiration from A. Duarte Rocha's rSCOPE v1.0 evapotranspiration model, which can be found on Zenodo [code], https://doi.org/10.5281/zenodo.6204580, 2022.
-
-Please note that **ZCCM::UHImodel** is currently undergoing peer-review, and caution is advised when interpreting its ouctomes. Our methodology is based on Anjos, M.; Meier, F. City Carbon Budget and hourly net CO2 fluxes at 0.01º resolution for informed climate action(in preparation).
+Please note that **ZCCM::UHI** is currently undergoing peer-review, and caution is advised when interpreting its outcomes. Our methodology is based on Anjos, M.; Meier, F. City Carbon Budget and hourly net CO2 fluxes at 0.01º resolution for informed climate action(in preparation).
 
 ### People
 
