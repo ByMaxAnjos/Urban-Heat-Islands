@@ -1,4 +1,4 @@
-# Zoom City Carbon Model::High spatio-temporal resolution of Urban-Heat-Islands
+# Zoom City Carbon Model::Tools for Urban Heat Islands and Local Climate Zones in R
 
 ## Introduction
 
