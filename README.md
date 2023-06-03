@@ -1,4 +1,4 @@
-# Zoom City Carbon Model::Tools for Urban Heat Islands and Local Climate Zones in R
+# Zoom City Carbon Model::Tools for Urban Heat Islands and Local Climate Zones Analysis in R
 
 ## Introduction
 
