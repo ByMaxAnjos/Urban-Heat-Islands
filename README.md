@@ -1,5 +1,7 @@
 # Zoom City Carbon Model::Tools for Urban Heat Islands and Local Climate Zones Analysis in R
 
+![interpolate](https://github.com/ByMaxAnjos/Urban-Heat-Islands/assets/94705218/63e6e858-254b-4d2d-8a37-0f91e61df566)
+
 ## Introduction
 
 As part of **Zoom City Carbon Model (ZCCM)**, we present the **ZCCM::UHI**, a set of R functions which models Urban Heat Island at high-definition and provides hourly interpolated air temperature data sourced from local air temperature readings, including community-sourced data and Local Climate Zone. 
