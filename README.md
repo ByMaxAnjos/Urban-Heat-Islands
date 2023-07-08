@@ -1,10 +1,10 @@
-# Zoom City Carbon Model::High spatio-temporal resolution of Urban-Heat-Islands
+# Zoom City Carbon Model::Tools for Urban Heat Islands and Local Climate Zones Analysis in R
 
 ## Introduction
 
 As part of **Zoom City Carbon Model (ZCCM)**, we present the **ZCCM::UHI**, a set of R functions which models Urban Heat Island at high-definition and provides hourly interpolated air temperature data sourced from local air temperature readings, including community-sourced data and Local Climate Zone. 
 
-Please note that **ZCCM::UHI** is currently undergoing peer-review, and caution is advised when interpreting its outcomes. Our methodology is based on Anjos, M.; Meier, F. City Carbon Budget and hourly net CO2 fluxes at 0.01º resolution for informed climate action(in preparation).
+Please note that **ZCCM::UHI** is currently undergoing peer-review, and caution is advised when interpreting its outcomes. Our methodology is based on Anjos, M.; Meier, F. City Carbon Budget and hourly net CO2 fluxes at 0.00025º resolution (30-meter grid cell) for informed climate action(in preparation).
 
 ### People
 
