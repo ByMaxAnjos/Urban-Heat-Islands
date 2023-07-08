@@ -1,17 +1,10 @@
 #=======================================================================================
 #
-# Title:       High Spatio-temporal Resolution of Urban Heat Islands
+# Title:       R functions for Local Climate Zones and Urban Heat Islands Analysis
 # Author:      Dr. Max Anjos (maxanjos@campus.ul.pt)
-# Description: Interpolation of air temperarure. More details on the approach are available at:
+# Description: More details on the approach are available at:
 #             https://github.com/ByMaxAnjos/Urban-Heat-Islands
 # Data: 27.05.2023
-
-
-#' @param air_temperature_data (required). Air temperature timseries (.csv format) from different local stations that should include latitude, longitude column
-#' @param LCZ_map (required).
-#' @param weather (required) Hourly meteorological data from the German Weather Service (DWD package).
-#' @return Air temperature summary, csv. table and sf multipolylines and raster maps
-#' @examples
 #=======================================================================================
 
 # Load theses packages
@@ -34,15 +27,15 @@ library(stars)
 
 
 #================================================================
-#FUNCTION X: get your LCZ map 
+#FUNCTION: get your LCZ map 
 #================================================================
 '
 Function to download and process Local Climate Zone Classification data from a specified region of interest (ROI)
-Input: city (optional) - name of the city to download data for
+city (optional) - name of the city 
 roi (optional) - polygon object defining the region of interest
-Output: raster object with the LCZ classes, with the name "LCZ_<city/ROI>"
+Output: raster.tiff object with the LCZ classes
 '
-
+#Function anatomy
 getLCZmap <- function(city=NULL, roi = NULL) {
     # Validate inputs
     if (is.null(city) & is.null(roi)) {
@@ -61,48 +54,48 @@ getLCZmap <- function(city=NULL, roi = NULL) {
       # Check if polygon was obtained successfully
       if(!is.null(shp_verify$geometry) & !inherits(shp_verify, "list")) {
         study_area <- shp_verify$geometry
-        study_area <- st_make_valid(study_area) %>%
-          st_as_sf() %>% 
-          st_transform(crs = "+proj=longlat +datum=WGS84 +no_defs")
+        study_area <- sf::st_make_valid(study_area) %>%
+          sf::st_as_sf() %>% 
+          sf::st_transform(crs = "+proj=longlat +datum=WGS84 +no_defs")
       } else {
         study_area <- shp_verify$multipolygon
-        study_area <- st_make_valid(study_area) %>%
-          st_as_sf() %>%
-          st_transform(crs="+proj=longlat +datum=WGS84 +no_defs")
+        study_area <- sf::st_make_valid(study_area) %>%
+          sf::st_as_sf() %>%
+          sf::st_transform(crs="+proj=longlat +datum=WGS84 +no_defs")
       }
       # Download the LCZ global map from https://zenodo.org/record/6364594/files/lcz_filter_v1.tif?download=1
-    #lcz_download <- raster::raster("/vsicurl/https://zenodo.org/record/6364594/files/lcz_filter_v1.tif?download=1")
+    lcz_download <- raster::raster("/vsicurl/https://zenodo.org/record/6364594/files/lcz_filter_v1.tif?download=1")
     lcz_ras <- raster::crop(lcz_download, raster::extent(study_area))
     lcz_ras <- raster::mask(lcz_ras, study_area)
-    names(lcz_ras) <- paste0("LCZ_",city)
+    names(lcz_ras) <- paste0("LCZ")
     return(lcz_ras)
   } else {
     # Download the LCZ global map from https://zenodo.org/record/6364594/files/lcz_filter_v1.tif?download=1
-    #lcz_download <- raster::raster("/vsicurl/https://zenodo.org/record/6364594/files/lcz_filter_v1.tif?download=1") 
-    roi_crs <- roi %>% st_as_sf() %>% st_transform(crs = "+proj=longlat +datum=WGS84 +no_defs")
+    lcz_download <- raster::raster("/vsicurl/https://zenodo.org/record/6364594/files/lcz_filter_v1.tif?download=1") 
+    roi_crs <- roi %>% sf::st_as_sf() %>% sf::st_transform(crs = "+proj=longlat +datum=WGS84 +no_defs")
     lcz_ras <- raster::crop(lcz_download, raster::extent(roi_crs))
     lcz_ras <- raster::mask(lcz_ras, roi_crs)
-    names(lcz_ras) <- "LCZ_ROI"
+    names(lcz_ras) <- "LCZ"
     return(lcz_ras)
-    
   }
   
 }
 
-lcz_ber <- getLCZmap(city="Berlin")
+#Apply the function
+#lcz_map <- getLCZmap(city="Berlin")
 
 #================================================================
-#FUNCTION X: plot your LCZ map 
+#FUNCTION: plot your LCZ map 
 #================================================================
 
-
-plotLCZ <- function(x) {
+#Function anatomy
+plotLCZmap <- function(x) {
   
   lcz_map <- x
   
-  lczClass <- ratify(lcz_map)
+  lczClass <- raster::ratify(lcz_map)
   
-  rat <- levels(lczClass)[[1]]
+  rat <- raster::levels(lczClass)[[1]]
   
   ID <- c(seq(1, 10, 1), seq(11, 17)) %>% as_tibble() %>% set_names("ID")
   
@@ -119,43 +112,36 @@ plotLCZ <- function(x) {
   
   rat$classes <- c(lcz_df$lcz.name)
   levels(lczClass) <- rat
-  qualPal <- c(lcz_df$lcz.col)
-  qualTheme <- rasterVis::rasterTheme(region = qualPal,
-                                      panel.background = list(col = 'white')
-  )
+  qualPal <- lcz_df$lcz.col
+  names(lcz.lables) <- lcz_df$lcz.name
 
-  # rasterVis::levelplot(lczClass, at = seq(min(lcz_df$ID),max(lcz_df$ID)), 
-  #                      par.settings = qualTheme)
-  
-  tm_shape(lczClass) +
-    tm_raster(palette = qualPal, labels = lcz_df$lcz.name, title = "LCZ") +
-    tm_layout(legend.show = TRUE,
+
+  tm_shape(rast(lczClass)) +
+    tm_raster(n=13, palette = qualPal, labels = lcz.lables, title = "LCZ", 
+              legend.hist = TRUE) +
+    tm_layout(legend.show = TRUE, 
               title.color = "#3f1651", title.size = 1.5,
               frame = TRUE, legend.outside = TRUE, legend.text.size = 1) +
-    #tm_scale_bar(position = "right", lwd = 1, color.dark = "black", color.light = "white", text.size = 0.5)+
+    tm_scale_bar(position=c("right","bottom"), lwd =0.5, color.dark = "black", color.light = "white", text.size = 0.5)+
     tm_credits("Source: ©ZoomCityCarbonModel,https://github.com/ByMaxAnjos/Urban-Heat-Islands\nData:Demuzere et al.(2022)/https://doi.org/10.5194/essd-14-3835-2022\nOpenStreetMap® contributions, 2023",
-               size = 0.4, position=c("left","bottom"), col = "#3f1651", bg.alpha = 0.5)+
-    #tm_compass(type="arrow", position=c("right", "top"), show.labels = 1) +
-    tm_graticules(lwd = .1) +
-    qtm(study_area, fill = NULL)
-  #tmap_save(iplot, filename = "fig-NEEmap.png", asp = 0)
-  
+               size = 0.5, position=c("left","bottom"), col = "#3f1651", bg.alpha = 0.3)+
+    tm_compass(type="arrow", position=c("right", "top"), show.labels = 1) +
+    tm_graticules(lwd = .3, col= "white")
 
 }
 
-g <- plotLCZ(lcz_ber)
-
-#Salve map
-tmap_save(g, "lcz_city.png", asp = 0)
-
+#Apply the function
+iplot <- plotLCZmap(lcz_map)
 
 #================================================================
-#FUNCTION X: get parameters from LCZ
+#FUNCTION: get parameters from LCZ system
 #================================================================
 '
 This nice function gets all LCZ parameters from Steawrt and Oke (2012)
-and convert them to shpafile or, if ras=TRUE,to raster stack.
+and convert them to shpafile or, if ras=TRUE, to raster stack.
 '
+
+#Function anatomy
 getLCZparameters <- function(lcz_map, ras = FALSE) {
   #lcz.id <- c(seq(1, 10, 1), seq(101, 107))
   lcz <- c(seq(1, 10, 1), seq(11, 17))
@@ -228,40 +214,51 @@ getLCZparameters <- function(lcz_map, ras = FALSE) {
     )
   #Preprocessing raster
   names(lcz_map) <- "lcz"
-  lcz_shp <- terra::as.polygons(rast(lcz_map)) %>% st_as_sf()
-  lcz_result <- inner_join(lcz_shp, lcz.df, by="lcz")
+  lcz_shp <- terra::as.polygons(rast(lcz_map)) %>% sf::st_as_sf()
+  lcz_result <- inner_join(lcz_shp, lcz.df, by="lcz") %>% 
+    dplyr::select(-lcz.code, -lcz.name, -lcz.col)
   
   if(ras==TRUE){
-    ras_map <- pbapply::pblapply(6:ncol(lcz_result)-1, FUN=function(i)
+    my.cores = parallel::detectCores()-1
+    ras_map <- parallel::mclapply(1:35, FUN=function(i) {
       stars::st_rasterize(lcz_result[,i]) %>% 
         terra::rast() %>% raster::raster() %>% 
-        terra::resample(lcz_map)
-      )
+        terra::resample(lcz_map)}, mc.cores = my.cores)
+      
     ras_stack <- raster::stack(ras_map)
-    names(ras_stack) <- colnames(lcz_result)[5:38]
+    names(ras_stack) <- colnames(lcz_result)[1:35]
     return(ras_stack)
   } else {
     return(lcz_result) 
   }
 }
-myLCZpar <- getLCZparameters(lcz_ara, ras = TRUE)
 
-# Plot
-tm_shape(myLCZpar) + 
-  tm_raster(n=10, palette = "RdBu",
-            title="LCZ parameters") + 
-  tm_layout(legend.show = FALSE)
+#Apply the function
+#LCZpar <- getLCZparameters(iLCZ, ras = FALSE)
 
 #================================================================
-#FUNCTION 2: calculate the time series of anomaly between LCZ
+#FUNCTION: calculate LCZ classe areas 
 #================================================================
+
+calLCZarea <- function(lcz_map, iplot=TRUE){
+  
+  imap <- terra::rast(lcz_map)
+  freq_df <- terra::freq(imap)
+  
+  a <- terra::cellSize(imap)
+  terra::zonal(a, imap)
+  
+}
+
+
+#================================================================
+#FUNCTION: calculate the time series of anomaly between LCZ
+#================================================================
+
 '
 This function calculate the anomaly between the classifed LCZ.
-It uses the same dataframe of air temperature and station points. 
+It uses air temperature and station points data. 
 '
-
-
-
 
 #define idates
 #month <- c("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec")
@@ -272,9 +269,212 @@ idates <- expand.grid(imonth, iyear)
 
 
 
+#================================================================
+#FUNCTION: UHI Conventional Interpolation 
+#================================================================
+
+'
+This function interpolates the air temperature in conventional way using kiring and IDW methods.
+It uses air temperature and station points data. 
+'
+
+#define idates
+#month <- c("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec")
+imonth <- c("jul")
+iyear <- c(2018)
+check_day <- 1
+idates <- expand.grid(imonth, iyear)
+
+#Interpolation without LCZ
+UHInterpolate.krige <- function(idates, air_df = air_UCON, roi = study_area,
+                                spRes=100) {
+  
+  imonth <- idates[1]
+  iyear <- idates[2]
+  
+  #Pre=processing data
+  if(is.null(check_day)) {
+    dt_month <- air_df %>%
+      openair::selectByDate(year = iyear, month = imonth) %>%
+      na.omit()
+    
+  } else {
+    dt_month <- air_df %>%
+      openair::selectByDate(year = iyear, month = imonth, day = check_day) %>%
+      na.omit()
+  }
+  
+  #Downscale to day
+  iday <- dt_month %>%
+    mutate(iday = lubridate::day(date)) %>%
+    distinct(iday, .keep_all = FALSE) %>%
+    expand.grid()
+  
+  model_day <- function(iday) {
+    
+    myday <- iday[1]
+    
+    modelday <- dt_month %>%
+      mutate(day = lubridate::day(date)) %>%
+      openair::selectByDate(day = myday,  hour = 0:23)
+    
+    #Downscale to hour
+    ihour <- modelday %>%
+      mutate(ihour = hour(date)) %>%
+      distinct(ihour, .keep_all = FALSE) %>%
+      expand.grid()
+    
+    model_hour <- function(ihour) {
+      
+      myhour <- ihour[1]
+      
+      data_model <- modelday %>%
+        mutate(hour = lubridate::hour(date)) %>%
+        openair::selectByDate(hour = myhour)
+      
+      airT <- data_model$airT
+      get_coord <- matrix(cbind(data_model$longitude,
+                                data_model$latitude),
+                          length(data_model$longitude))
+      
+      get_coord_df <- data.frame(x = get_coord [,1], y = get_coord[,2])
+      sp::coordinates(get_coord_df) = c("x", "y")
+      sp::proj4string(get_coord_df) <- sp::CRS("+proj=longlat +datum=WGS84")
+      get_coord <- sp::spTransform(get_coord_df, "+proj=utm +zone=33 +datum=WGS84 +units=m +no_defs")
+      
+      grid_stations <- raster::raster(raster::extent(roi), res = spRes)
+      raster::values(grid_stations) <- 1:raster::ncell(grid_stations)
+      raster::crs(grid_stations) <- "+proj=utm +zone=33 +datum=WGS84 +units=m +no_defs"
+      
+      # Convert to spatial pixel
+      my_grid <- raster::rasterToPoints(grid_stations, spatial = TRUE)
+      sp::gridded(my_grid) <- TRUE
+      my_grid <- methods::as(my_grid, "SpatialPixels")
+      
+      vgm_air = gstat::variogram(object = airT ~ 1, data = get_coord)# set a variogram
+      fit_var_air = gstat::fit.variogram(object = vgm_air, gstat::vgm("Sph")) # fit a variogram
+      fit_var_air$range[fit_var_air$range < 0] <- abs(fit_var_air$range)[2]
+      
+      kriging_air = gstat::krige(airT ~ 1, locations = get_coord, newdata = my_grid,
+                                 model = fit_var_air, debug.level = 0)
+      kriging_air = raster::raster(kriging_air)
+      kriging_air = raster::crop(x = kriging_air, roi)
+      kriging_air = raster::mask(kriging_air, roi)
+      mydate <- data_model %>% distinct(date, .keep_all = FALSE) %>% as.data.frame()
+      mydate <- gsub("[: -]", "" , mydate$date, perl=TRUE)
+      names(kriging_air) <- paste0("OK.airT_",mydate)
+      return(kriging_air)
+      
+    }
+    
+    MapHour <-  pbapply::pbapply(ihour, 1, model_hour)
+    return(MapHour)
+    
+  }
+  
+  MapDay <-   apply(iday, 1, model_day)
+  return(MapDay)
+  
+}
+
+job_airT.krige <- apply(idates, 1, UHInterpolate.krige) #Apply the function
+job_airT2 <- raster::brick(unlist(job_airT.krige)) #Or get raster stack
+
+
+#Interpolation without LCZ
+UHInterpolate.IDW <- function(idates, air_df = air_UCON, roi = study_area,
+                              spRes=100) {
+  
+  imonth <- idates[1]
+  iyear <- idates[2]
+  
+  #Pre=processing data
+  if(is.null(check_day)) {
+    dt_month <- air_df %>%
+      openair::selectByDate(year = iyear, month = imonth) %>%
+      na.omit()
+    
+  } else {
+    dt_month <- air_df %>%
+      openair::selectByDate(year = iyear, month = imonth, day = check_day) %>%
+      na.omit()
+  }
+  
+  #Downscale to day
+  iday <- dt_month %>%
+    mutate(iday = lubridate::day(date)) %>%
+    distinct(iday, .keep_all = FALSE) %>%
+    expand.grid()
+  
+  model_day <- function(iday) {
+    
+    myday <- iday[1]
+    
+    modelday <- dt_month %>%
+      mutate(day = lubridate::day(date)) %>%
+      openair::selectByDate(day = myday,  hour = 0:23)
+    
+    #Downscale to hour
+    ihour <- modelday %>%
+      mutate(ihour = hour(date)) %>%
+      distinct(ihour, .keep_all = FALSE) %>%
+      expand.grid()
+    
+    model_hour <- function(ihour) {
+      
+      myhour <- ihour[1]
+      
+      data_model <- modelday %>%
+        mutate(hour = lubridate::hour(date)) %>%
+        openair::selectByDate(hour = myhour)
+      
+      #Get station points
+      shp_stations <- data_model %>%
+        distinct(latitude, longitude, .keep_all = T) %>%
+        dplyr::select(station, latitude, longitude, airT) %>%
+        sf::st_as_sf(coords = c("longitude", "latitude"), crs = 4326) %>%
+        st_transform(crs = mycrs) %>% 
+        sf::st_intersection(roi)
+      
+      grid_stations <- raster::raster(raster::extent(roi), res = spRes)
+      raster::values(grid_stations) <- 1:raster::ncell(grid_stations)
+      raster::crs(grid_stations) <- "+proj=utm +zone=33 +datum=WGS84 +units=m +no_defs"
+      
+      # Convert to spatial pixel
+      my_grid <- raster::rasterToPoints(grid_stations, spatial = TRUE)
+      sp::gridded(my_grid) <- TRUE
+      fullgrid(my_grid) <- TRUE
+      my_grid <- methods::as(my_grid, "SpatialPixels")
+    
+      #IDW
+      idw_mod = gstat(formula=airT ~ 1, data = shp_stations, set=list(idp =2.0))
+      idw_map = predict(idw_mod, st_as_stars(raster(my_grid)))
+      idw_map = idw_map["var1.pred",,]
+      idw_map = raster::raster(rast(idw_map))
+      idw_map = raster::crop(idw_map, raster::extent(roi))
+      idw_map = raster::mask(idw_map, roi)
+      mydate <- data_model %>% distinct(date, .keep_all = FALSE) %>% as.data.frame()
+      mydate <- gsub("[: -]", "" , mydate$date, perl=TRUE)
+      names(idw_map) <- paste0("IDW.airT_",mydate)
+      return(idw_map)
+     
+    }
+    MapHour <-  pbapply::pbapply(ihour, 1, model_hour)
+    return(MapHour)
+  }
+  
+  MapDay <-   apply(iday, 1, model_day)
+  return(MapDay)
+  
+}
+
+job_airT.IDW <- apply(idates, 1, UHInterpolate.IDW) #Apply the function
+job_airT2 <- raster::brick(unlist(job_airT.IDW)) #Or get raster stack
+
+
 
 #================================================================
-#FUNCTION X: Interpolation of air temperature based on LCZ map
+#FUNCTION: Interpolation of air temperature based on LCZ map
 #================================================================
 '
 idates is the dataframe with the defined period.
@@ -298,22 +498,49 @@ air_cws_2018 <- air_cws_2018 %>%
   dplyr::select(date, longitude, latitude, airT)
 
 #UCON data
-air_UCON <- fread("inputs/data/airT_UCON_2015_2022.csv") %>%
+air_UCON <- fread("/Users/co2map/Documents/CO2CityMap/Berlin/Components/building/inputs/data/airT_UCON_2015_2022.csv") %>%
   rename(longitude = Longitude,
          latitude = Latitude)
+
+# Get study area polygon from OpenStreetMap data
+city <- "Berlin"
+mycrs <- "+proj=utm +zone=33 +datum=WGS84 +units=m +no_defs"
+#mycrs <- 4326
+shp_verify <- osmdata::getbb(city, format_out = "sf_polygon", limit = 1, featuretype = "city")
+# Check if polygon was obtained successfully
+if(!is.null(shp_verify$geometry) & !inherits(shp_verify, "list")) {
+  study_area <- shp_verify$geometry
+  study_area <- st_make_valid(study_area) %>%
+    st_as_sf() %>% 
+    st_transform(crs = mycrs)
+} else {
+  study_area <- shp_verify$multipolygon
+  study_area <- st_make_valid(study_area) %>%
+    st_as_sf() %>%
+    st_transform(crs= mycrs)
+}
+
+qtm(study_area)# Plot map
 
 #Get lcz map
 lcz_map <- raster("/Users/co2map/Documents/CO2CityMap/Berlin/Components/Building/LCZ/lcz_berlin2.tif")
 lcz_map <- raster::projectRaster(lcz_map, crs = mycrs)
 qtm(lcz_map)
 
-AirInterpolateLCZ <- function(idates,
+
+#define idates
+#month <- c("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec")
+imonth <- c("jul")
+iyear <- c(2018)
+check_day <- 1
+idates <- expand.grid(imonth, iyear)
+
+
+AirInterpolateLCZ.IDW <- function(idates,
                               air_df = air_UCON,
                               roi = study_area,
-                              spRes = 500,
-                              Kriging = TRUE,
-                              IDW = FALSE,
                               lcz = lcz_map,
+                              spRes = 100,
                               isave = FALSE) {
   imonth <- idates[1]
   iyear <- idates[2]
@@ -333,12 +560,19 @@ AirInterpolateLCZ <- function(idates,
   grid_stations <- raster::raster(raster::extent(roi), res = spRes)
   raster::values(grid_stations) <- 1:raster::ncell(grid_stations)
   raster::crs(grid_stations) <- mycrs
+  # Convert to spatial pixel
+  my_grid <- raster::rasterToPoints(grid_stations, spatial = TRUE)
+  sp::gridded(my_grid) <- TRUE
+  my_grid <- methods::as(my_grid, "SpatialPixels")
+  my_grid <- rast(raster(my_grid))
+
   
   iLCZ <-
     raster::crop(lcz, extent(roi)) %>%
     raster::mask(roi) %>%
     resample(grid_stations) #Resample
   names(iLCZ) <- "lcz"
+
   #Convert lcz_map to polygon
   lcz_shp <- terra::as.polygons(rast(iLCZ)) %>%
     st_as_sf() %>%
@@ -351,7 +585,7 @@ AirInterpolateLCZ <- function(idates,
     st_area(poly_list[[i]]))
   #Sample the number of points according to area of the polygon and convert to data.frame
   lcz_poi <- lapply(1:length(poly_list), function(i)
-    st_sample(poly_list[[i]], size=100, prob=lcz_areas[[i]], method = "random", exact = FALSE) %>%
+    st_sample(poly_list[[i]], size=100, prob=lcz_areas[[i]], method = "regular", exact = FALSE) %>%
       as.data.frame())
   #Merge all dataframes and convert to sf points
   lcz_poi <- do.call(rbind.data.frame, lcz_poi) %>%
@@ -359,6 +593,7 @@ AirInterpolateLCZ <- function(idates,
     st_transform(crs = mycrs)
   #Intersect lcz poi with lcz shp
   lcz_poi_get <- sf::st_intersection(lcz_poi, lcz_shp)
+
   
   #Downscale to hour
   iday <- air_model %>%
@@ -399,66 +634,48 @@ AirInterpolateLCZ <- function(idates,
       lcz_stations <- sf::st_intersection(shp_stations, lcz_shp)
       
       #Merge table to create a sf to model
-      lcz_poi_mod <- inner_join(lcz_poi_get,lcz_stations %>% as_tibble() %>%
+      lcz_poi_mod <- inner_join(lcz_poi_get, lcz_stations %>% as_tibble() %>%
                                   dplyr::select(lcz, station, airT), by=c("lcz")) %>%
         group_by(station) %>%
-        mutate(FID_station=cur_group_id()) %>%
-        dplyr::select(-station, -lcz)
-      
-      # Convert LCZ map to starts
-      lcz_stars <- st_as_stars(iLCZ, dimensions = "XY")
-      train_mod = st_join(lcz_poi_mod, st_as_sf(lcz_stars)) %>%
-        mutate(lcz = as.integer(lcz)) %>% 
-        dplyr::select(airT, lcz, geometry)
-      train_mod = train_mod[!is.na(train_mod$lcz),]
-      st_crs(lcz_stars) <- st_crs(train_mod)
-      
-      if(Kriging==TRUE) {
-        
-        ## [using ordinary kriging]
-        krige_vgm <- autofitVariogram(airT ~ lcz, as(train_mod, "Spatial"))$var_model
-        krige_mod = gstat(formula = airT ~ lcz, model = krige_vgm$var_model, data = train_mod)
-        krige_map = predict(krige_mod, newdata=lcz_stars, debug.level = 1)
-        krige_map = krige_map["var1.pred",,]
-        krige_map = raster::raster(rast(krige_map))
-        krige_map = raster::crop(krige_map, raster::extent(roi))
-        krige_map = raster::mask(krige_map, roi)
-        mydate <- data_model %>% distinct(date, .keep_all = FALSE) %>% as.data.frame()
-        mydate <- gsub("[: -]", "" , mydate$date, perl=TRUE)
-        names(krige_map) <- paste0("Krige_LCZ_", mydate)
-        return(krige_map)
-        
-      }
-      
-      if(IDW==TRUE) {
-        
-        #IDW
-        idw_mod = gstat(formula = airT ~ 1, data = train_mod)
-        idw_map = predict(idw_mod, lcz_stars, debug.level = 0)
-        idw_map = idw_map["var1.pred",,]
-        idw_map <- raster(rast(idw_map))
-        mydate <- data_model %>% distinct(date, .keep_all = FALSE) %>% as.data.frame()
-        mydate <- gsub("[: -]", "" , mydate$date, perl=TRUE)
-        names(idw_map) <- paste0("IDW_LCZ_",mydate)
-        return(idw_map)
-        
-      }
-      
-      # # Resample air map
-      # air_resample = raster::resample(idw_map, build)
-      # #raster::writeRaster(air_resample, paste0("Building/outputs/maps/UHI/", mydate, "_UHI.TIF"), format="GTiff", overwrite = TRUE)
-      # #Merge building with air raster
-      # air_build <- as_tibble(rasterToPoints(air_resample)) %>% set_names(c("x", "y", "airT"))
-      # build_df <- as_tibble(rasterToPoints(build))
-      # build_model <- inner_join(build_df, air_build, by= c("x", "y")) %>%
-      #   mutate(hour = paste0(myhour))
+        #mutate(FID_station=cur_group_id()) %>%
+        dplyr::select(-station)
+      # train_mod <- lcz_poi_mod %>% st_coordinates() %>% 
+      #   bind_cols(lcz_poi_mod %>% as_tibble() %>% dplyr::select(-geometry)) %>% 
+      #   rename(x = X, y = Y)
       # 
-      # #Calculate CO2 emissions
-      # ECO2B <- ECO2build(build_model)
-      # ECO2T_ras <- ECO2B %>% dplyr::select(x, y, ECO2_micro)
-      # ECO2T_ras = raster::rasterFromXYZ(xyz = ECO2T_ras,crs = mycrs)
-      # names(ECO2T_ras) <- paste0("CO2B_", mydate)
-      # return(ECO2T_ras)
+      # Convert LCZ map to starts
+      # lcz_stars <- st_as_stars(raster(my_grid), dimensions = "XY")
+      # train_mod = st_join(lcz_poi_mod, st_as_sf(lcz_stars)) %>%
+      #   mutate(lcz = as.integer(lcz)) %>% 
+      #   dplyr::select(airT, lcz, FID_station, geometry)
+      # train_mod = train_mod[!is.na(train_mod$lcz),]
+      # st_crs(lcz_stars) <- st_crs(train_mod)
+      
+      idw_mod = gstat(formula=airT ~ 1, data = lcz_poi_mod, nmax = 7, set=list(idp =2.0))
+      idw_map = predict(idw_mod, st_as_stars(raster(my_grid)))
+      idw_map = idw_map["var1.pred",,]
+      idw_map = raster::raster(rast(idw_map))
+      idw_map = raster::crop(idw_map, raster::extent(roi))
+      idw_map = raster::mask(idw_map, roi)
+      mydate <- data_model %>% distinct(date, .keep_all = FALSE) %>% as.data.frame()
+      mydate <- gsub("[: -]", "" , mydate$date, perl=TRUE)
+      names(idw_map) <- paste0("IDW.LCZ.airT_",mydate)
+
+        #IDW
+        # idw_mod = gstat(formula = airT ~ 1, data = train_mod)
+        # idw_map = predict(idw_mod, lcz_stars, debug.level = 0)
+        # idw_map = idw_map["var.pred",,]
+        # idw_mod <- gstat(id = "airT", formula = airT~1, locations = ~x+y, data = train_mod,
+        #             nmax = 7, set = list(idp =.5))
+        # idw_map <- terra::interpolate(rast(raster(my_grid)), idw_mod, debug.level = 0)
+        # idw_map <- idw_map["airT.pred",,]
+        # idw_map <- terra::mask(idw_map, vect(study_area))
+        # mydate <- data_model %>% distinct(date, .keep_all = FALSE) %>% as.data.frame()
+        # mydate <- gsub("[: -]", "" , mydate$date, perl=TRUE)
+        # names(idw_map) <- paste0("IDW_LCZ_",mydate)
+        return(idw_map)
+
+      
       #Salve the map
       
       if(isave == TRUE) {
@@ -494,10 +711,8 @@ AirInterpolateLCZ <- function(idates,
   return(UHIday)
   
 }
-
-job_airT <- apply(idates, 1, AirInterpolateLCZ) #Apply the function
-job_airT_stack <- raster::stack(unlist(job_airT)) #Or get raster stack
-qtm(job_airT_stack[[c(19)]]) #plot the map
+job_airT <- apply(idates, 1, AirInterpolateLCZ.IDW) #Apply the function
+job_airT_stack <- raster::brick(unlist(job_airT)) #Or get raster stack
 
 
 #================================================================
@@ -529,9 +744,9 @@ air_UCON <- fread("/Users/co2map/Documents/CO2CityMap/Berlin/Components/building
 
 #define idates
 #month <- c("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec")
-imonth <- c("feb")
-iyear <- c(2019)
-check_day <- 4
+imonth <- c("jul")
+iyear <- c(2018)
+check_day <- NULL
 idates <- expand.grid(imonth, iyear)
 
 #LCZ
@@ -539,11 +754,11 @@ UHInterpolatEval.LCZ <- function(idates,
                                  lcz = lcz_map,
                                  air_df = air_UCON,
                                  roi = study_area,
-                                 spRes = 500,
+                                 spRes = 100,
                                  Kriging.eval = FALSE,
                                  kriging.cv = FALSE,
-                                 IDW.eval = FALSE,
-                                 IDW.cv = TRUE) {
+                                 IDW.eval = TRUE,
+                                 IDW.cv = FALSE) {
   imonth <- idates[1]
   iyear <- idates[2]
   
@@ -638,19 +853,22 @@ UHInterpolatEval.LCZ <- function(idates,
         
         
         #Merge table to create a sf to model
-        lcz_poi_mod <- inner_join(lcz_poi_get, model_train %>% as_tibble() %>%
+        lcz_poi_mod <- inner_join(lcz_poi_get, lcz_stations %>% as_tibble() %>%
                                     dplyr::select(lcz, station, airT), by=c("lcz")) %>%
           group_by(station) %>%
-          mutate(FID_station=cur_group_id()) %>%
-          dplyr::select(-station, -lcz)
+          #mutate(FID_station=cur_group_id()) %>%
+          dplyr::select(-station)
+        train_mod <- lcz_poi_mod %>% st_coordinates() %>% 
+          bind_cols(lcz_poi_mod %>% as_tibble() %>% dplyr::select(-geometry)) %>% 
+          rename(x = X, y = Y)
         
-        # Convert LCZ map to starts
-        lcz_stars <- st_as_stars(iLCZ, dimensions = "XY")
-        train_mod = st_join(lcz_poi_mod, st_as_sf(lcz_stars)) %>%
-          mutate(lcz = as.integer(lcz)) %>%
-          dplyr::select(airT, lcz, geometry)
-        train_mod = train_mod[!is.na(train_mod$lcz),]
-        st_crs(lcz_stars) <- st_crs(train_mod)
+        # # Convert LCZ map to starts
+        # lcz_stars <- st_as_stars(iLCZ, dimensions = "XY")
+        # train_mod = st_join(lcz_poi_mod, st_as_sf(lcz_stars)) %>%
+        #   mutate(lcz = as.integer(lcz)) %>%
+        #   dplyr::select(airT, lcz, geometry)
+        # train_mod = train_mod[!is.na(train_mod$lcz),]
+        # st_crs(lcz_stars) <- st_crs(train_mod)
         
         ## [using ordinary kriging]
         krige_vgm <- autofitVariogram(airT ~ lcz, as(train_mod, "Spatial"))$var_model
@@ -806,14 +1024,15 @@ UHInterpolatEval.LCZ <- function(idates,
           distinct(latitude, longitude, .keep_all = T) %>%
           dplyr::select(station, latitude, longitude, airT) %>%
           sf::st_as_sf(coords = c("longitude", "latitude"), crs = 4326) %>%
-          st_transform(crs = mycrs) 
+          st_transform(crs = mycrs) %>% 
+          sf::st_intersection(roi)
         
-        model_split <- initial_split(shp_stations)
+        model_split <- initial_split(shp_stations, prop = .7)
         model_train <- training(model_split)
         model_test <- testing(model_split) %>% st_as_sf(coords = c("longitude", "latitude"), crs = 4326) %>% 
           st_transform(crs = mycrs) %>% 
           rename(airT_actual =  airT)
-        
+
         #Intersect shp stations with lcz shp
         lcz_stations_train <- sf::st_intersection(model_train, lcz_shp)
         
@@ -821,22 +1040,29 @@ UHInterpolatEval.LCZ <- function(idates,
         lcz_poi_mod <- inner_join(lcz_poi_get,lcz_stations_train %>% as_tibble() %>%
                                     dplyr::select(lcz, station, airT), by=c("lcz")) %>%
           group_by(station) %>%
-          mutate(FID_station=cur_group_id()) %>%
+          #mutate(FID_station=cur_group_id()) %>%
           dplyr::select(-station, -lcz)
+        train_mod <- lcz_poi_mod %>% st_coordinates() %>% 
+          bind_cols(lcz_poi_mod %>% as_tibble() %>% dplyr::select(-geometry)) %>% 
+          rename(x = X, y = Y)
         
         # Convert LCZ map to starts
-        lcz_stars <- st_as_stars(iLCZ, dimensions = "XY")
-        train_mod = st_join(lcz_poi_mod, st_as_sf(lcz_stars)) %>%
-          mutate(lcz = as.integer(lcz)) %>%
-          dplyr::select(airT, lcz, geometry)
-        train_mod = train_mod[!is.na(train_mod$lcz),]
-        st_crs(lcz_stars) <- st_crs(train_mod)
-        
+        # lcz_stars <- st_as_stars(iLCZ, dimensions = "XY")
+        # train_mod = st_join(lcz_poi_mod, st_as_sf(lcz_stars)) %>%
+        #   mutate(lcz = as.integer(lcz)) %>%
+        #   dplyr::select(airT, lcz, geometry)
+        # train_mod = train_mod[!is.na(train_mod$lcz),]
+        # st_crs(lcz_stars) <- st_crs(train_mod)
+  
         #IDW
-        idw_mod = gstat(formula = airT ~ 1, data = train_mod)
-        idw_map = predict(idw_mod, lcz_stars, debug.level = 0)
-        idw_map = idw_map["var1.pred",,]
-        idw_map <- raster(rast(idw_map))
+        # idw_mod = gstat(formula = airT ~ 1, data = train_mod)
+        # idw_map = predict(idw_mod, lcz_stars, debug.level = 0)
+        # idw_map = idw_map["var.pred",,]
+        idw_mod <- gstat(id = "airT", formula = airT~1, locations = ~x+y, data = train_mod,
+                         nmax = 7, set = list(idp =.5))
+        idw_map <- terra::interpolate(rast(raster(my_grid)), idw_mod, debug.level = 0)
+        idw_map <- idw_map["airT.pred",,]
+        idw_map <- terra::mask(idw_map, vect(roi))
         mydate <- data_model %>% distinct(date, .keep_all = FALSE) %>% as.data.frame()
         mydate <- gsub("[: -]", "" , mydate$date, perl=TRUE)
         names(idw_map) <- paste0("airT_pred")
@@ -844,13 +1070,14 @@ UHInterpolatEval.LCZ <- function(idates,
         #Metrics
         #This is the RMSE value for the IDW interpolation with original points testing
         eval_df=st_join(model_test, st_as_sf(st_as_stars(idw_map))) %>% 
-          na.omit() %>% as_tibble() %>% dplyr::select(-geometry)
+          na.omit() %>% as_tibble() %>% dplyr::select(-geometry) %>% 
+          rename(airT_pred= values)
         eval_result= data_model %>% distinct(date, .keep_all = FALSE) %>%
           mutate(method = "LCZ-IDW") %>% 
           bind_cols(openair::modStats(eval_df,  mod = "airT_pred", obs = "airT_actual")) %>% as_tibble() %>% 
           dplyr::select(-default)
-        return(eval_result)
         
+        return(eval_result)
       }
       
       MapHour <- pbapply::pbapply(ihour, 1, model_hour)
@@ -896,40 +1123,43 @@ UHInterpolatEval.LCZ <- function(idates,
           distinct(latitude, longitude, .keep_all = T) %>%
           dplyr::select(station, latitude, longitude, airT) %>%
           sf::st_as_sf(coords = c("longitude", "latitude"), crs = 4326) %>%
-          st_transform(crs = mycrs) 
+          st_transform(crs = mycrs) %>% 
+          sf::st_intersection(roi)
         
-        model_split <- initial_split(shp_stations)
+        model_split <- initial_split(shp_stations, prop = .7)
         model_train <- training(model_split)
         model_test <- testing(model_split) %>% st_as_sf(coords = c("longitude", "latitude"), crs = 4326) %>% 
           st_transform(crs = mycrs) %>% 
           rename(airT_actual =  airT)
+  
         
         #Intersect shp stations with lcz shp
         lcz_stations_train <- sf::st_intersection(model_train, lcz_shp)
         
         #Merge table to create a sf to model
-        lcz_poi_mod <- inner_join(lcz_poi_get,lcz_stations_train %>% as_tibble() %>%
+        lcz_poi_mod <- inner_join(lcz_poi_get, lcz_stations_train %>% as_tibble() %>%
                                     dplyr::select(lcz, station, airT), by=c("lcz")) %>%
           group_by(station) %>%
-          mutate(FID_station=cur_group_id()) %>%
+          #mutate(FID_station=cur_group_id()) %>%
           dplyr::select(-station, -lcz)
         
-        # Convert LCZ map to starts
-        lcz_stars <- st_as_stars(iLCZ, dimensions = "XY")
-        train_mod = st_join(lcz_poi_mod, st_as_sf(lcz_stars)) %>%
-          mutate(lcz = as.integer(lcz)) %>%
-          dplyr::select(airT, lcz, geometry)
-        train_mod = train_mod[!is.na(train_mod$lcz),]
-        st_crs(lcz_stars) <- st_crs(train_mod)
+        # # Convert LCZ map to starts
+        # lcz_stars <- st_as_stars(iLCZ, dimensions = "XY")
+        # train_mod = st_join(lcz_poi_mod, st_as_sf(lcz_stars)) %>%
+        #   mutate(lcz = as.integer(lcz)) %>%
+        #   dplyr::select(airT, lcz, geometry)
+        # train_mod = train_mod[!is.na(train_mod$lcz),]
+        # st_crs(lcz_stars) <- st_crs(train_mod)
         
         #IDW
-        idw_cv_mod = gstat(formula = airT ~ 1, data = train_mod)
+        idw_cv_mod = gstat(id = "airT", formula = airT~1, locations = ~x+y, data = train_mod,
+                           nmax = 7, set = list(idp =.5))
         idw_cv = gstat.cv(idw_cv_mod, nfold = 5, verbose = FALSE)
-        idw_cv = st_as_sf(idw_cv)
+        #idw_cv = st_as_sf(idw_cv)
         cv_result= data_model %>% distinct(date, .keep_all = FALSE) %>%
           mutate(method = "LCZ-IDW",
                  eval = "cross validation") %>% 
-          bind_cols(openair::modStats(idw_cv,  mod = "var1.pred", obs = "observed")) %>% as_tibble() %>% 
+          bind_cols(openair::modStats(idw_cv,  mod = "airT.pred", obs = "observed")) %>% as_tibble() %>% 
           dplyr::select(-default)
         
         return(cv_result)
@@ -954,11 +1184,11 @@ UHInterpolatEval.LCZ <- function(idates,
 job_lcz <- apply(idates, 1, UHInterpolatEval.LCZ)[[1]] #Apply the function
 
 #Plot the metrics
-timePlot(job_airT, pollutant = c("RMSE", "IOA", "r", "COE", "MB", "MGE", "NMGE"), y.relation = "free")
-
+timePlot(job_lcz, pollutant = c("RMSE", "IOA", "r", "COE", "MB", "MGE", "NMGE"), y.relation = "free")
+#write_csv(job_lcz, "metrics_lcz_airt_idwjul2018.csv")
 
 #================================================================
-#FUNCTION X: Estimate the CO2 emissions from buildings using LCZ map
+#FUNCTION X: Estimate the CO2 emissions from buildings using airT and LCZ maps
 #================================================================
 '
 idates is the dataframe with the defined period.
@@ -969,18 +1199,29 @@ varmodel is the variogram model type. It can be "Exp", "Sph", "Gau" or "Mat".
 isave if TRUE creates a new folder "ZCCM_Output" in you path and saves the rasters
 '
 
+#UCON data
+air_UCON <- fread("/Users/co2map/Documents/CO2CityMap/Berlin/Components/building/inputs/data/airT_UCON_2015_2022.csv") %>%
+  rename(longitude = Longitude,
+         latitude = Latitude)
+
+#define idates
+#month <- c("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec")
+imonth <- c("feb")
+iyear <- c(2019)
+check_day <- 6
+idates <- expand.grid(imonth, iyear)
+
 #Building
-build <- raster::raster("/Users/co2map/Documents/CO2CityMap/Berlin/Components/building/inputs/raster/build100.tif")
+build_frac <- raster::raster("/Users/co2map/Documents/CO2CityMap/Berlin/Components/building/inputs/raster/build_vol_frac.tif")
+qtm(build_frac)
 
-
-CO2BuildLCZ <- function(idates,
+#LCZ map
+CO2BuildLCZ.idw <- function(idates,
                               air_df = air_UCON,
                               lcz = lcz_map,
-                              build = build,
+                              build = build_frac,
                               roi = study_area,
-                              spRes = 100,
-                              Kriging = FALSE,
-                              IDW = TRUE) {
+                              spRes = 1000) {
   imonth <- idates[1]
   iyear <- idates[2]
   
@@ -1000,8 +1241,7 @@ CO2BuildLCZ <- function(idates,
   raster::values(grid_stations) <- 1:raster::ncell(grid_stations)
   raster::crs(grid_stations) <- mycrs
   
-  iLCZ <-
-    raster::crop(lcz, extent(roi)) %>%
+  iLCZ <- raster::crop(lcz, extent(roi)) %>%
     raster::mask(roi) %>%
     resample(grid_stations) #Resample
   names(iLCZ) <- "lcz"
@@ -1026,258 +1266,318 @@ CO2BuildLCZ <- function(idates,
   #Intersect lcz poi with lcz shp
   lcz_poi_get <- sf::st_intersection(lcz_poi, lcz_shp)
   
+  #Formula to calculate building CO2 emissions
+  ECO2build <- function(x) {
+    x <- mutate(x, ECO2_micro = as.numeric(
+      ifelse(hour == 0, abs(-1.57*max(0, 9.9 - airT)-3.6*volume),
+             ifelse(hour == 1, abs(-1.73*max(0, 12.8 - airT)- 4.2*volume),
+                    ifelse(hour == 2, abs(-1.73*max(0,12 - airT)-4.64*volume),
+                           ifelse(hour == 3, abs(-1.5*max(0, 13.1 - airT)-3.44*volume),
+                                  ifelse(hour == 4, abs(-1.38*max(0, 12.4 - airT)-3.86*volume),
+                                         ifelse(hour == 5, abs(-1.7*max(0, 12.9 - airT)-2.46*volume),
+                                                ifelse(hour == 6, abs(-2.55*max(0, 12.7 - airT)-0.77*volume),
+                                                       ifelse(hour == 7, abs(-2.29*max(0, 10.2 - airT)-2.18*volume),
+                                                              ifelse(hour == 8, abs(-2.88*max(0, 12.7 - airT)- (-1.5)*volume),
+                                                                     ifelse(hour == 9, abs(-2.97*max(0, 12.3 - airT)-(-1.8)*volume),
+                                                                            ifelse(hour == 10, abs(-1.27*max(0, 13.3 - airT)-0.59*volume),
+                                                                                   ifelse(hour == 11, abs(-1.45*max(0, 15.3 - airT)-0.57*volume),
+                                                                                          ifelse(hour == 12, abs(-1.48*max(0, 15 - airT)-1.1*volume),
+                                                                                                 ifelse(hour == 13, abs(-1.45*max(0, 13.7 - airT)-1.7*volume),
+                                                                                                        ifelse(hour == 14, abs(-1.34*max(0, 13.2 - airT)-2.11*volume),
+                                                                                                               ifelse(hour == 15, abs(-1.35*max(0, 13.5 - airT)-3.22*volume),
+                                                                                                                      ifelse(hour == 16, abs(-1.36*max(0, 13 - airT)-4.39*volume),
+                                                                                                                             ifelse(hour == 17, abs(-1.29*max(0, 12 - airT)-5.4*volume),
+                                                                                                                                    ifelse(hour == 18, abs(-1.44*max(0, 10.6 - airT)-7.3*volume),
+                                                                                                                                           ifelse(hour == 19, abs(-1.44*max(0, 7 - airT)-9.77*volume),
+                                                                                                                                                  ifelse(hour == 20, abs(-2.7*max(0, 6 - airT)-6.87*volume),
+                                                                                                                                                         ifelse(hour == 21, abs(-1.24*max(0, 8 - airT)-4.29*volume),
+                                                                                                                                                                ifelse(hour == 22, abs(-0.48*max(0, 10.3 - airT)-3.68*volume),
+                                                                                                                                                                       ifelse(hour == 23, abs(-1.69*max(0, 12.4 - airT)-3.6*volume), ""))))))))))))))))))))))))))
+    
+    return(x)
+  }
+  
   #Downscale to hour
   iday <- air_model %>%
     mutate(iday = lubridate::day(date)) %>%
     distinct(iday, .keep_all = FALSE) %>%
     expand.grid()
   
-  if(kriging==TRUE) {
-    
     model_day <- function(iday) {
-      
+
       myday <- iday[1]
-      
+
       modelday <- air_model %>%
         mutate(day = lubridate::day(date)) %>%
         openair::selectByDate(day = myday)
-      
+
       #Downscale to hour
       ihour <- modelday %>%
         mutate(ihour = hour(date)) %>%
         distinct(ihour, .keep_all = FALSE) %>%
         expand.grid()
-      
+
       model_hour <- function(ihour) {
-        
+
         myhour <- ihour[1]
-        
+
         data_model <- modelday %>%
           mutate(hour = lubridate::hour(date)) %>%
           openair::selectByDate(hour = myhour) %>% as_tibble()
-        
+
         #Get station points
         shp_stations <- data_model %>%
           distinct(latitude, longitude, .keep_all = T) %>%
           dplyr::select(station, latitude, longitude, airT) %>%
           sf::st_as_sf(coords = c("longitude", "latitude"), crs = 4326) %>%
-          st_transform(crs = mycrs) 
-        
+          st_transform(crs = mycrs)
+
         #Intersect shp stations with lcz shp
         lcz_stations <- sf::st_intersection(shp_stations, lcz_shp)
-        
+
         #Merge table to create a sf to model
         lcz_poi_mod <- inner_join(lcz_poi_get,lcz_stations %>% as_tibble() %>%
                                     dplyr::select(lcz, station, airT), by=c("lcz")) %>%
           group_by(station) %>%
           mutate(FID_station=cur_group_id()) %>%
           dplyr::select(-station, -lcz)
-        
+
         # Convert LCZ map to starts
         lcz_stars <- st_as_stars(iLCZ, dimensions = "XY")
         train_mod = st_join(lcz_poi_mod, st_as_sf(lcz_stars)) %>%
-          mutate(lcz = as.integer(lcz)) %>% 
+          mutate(lcz = as.integer(lcz)) %>%
           dplyr::select(airT, lcz, geometry)
         train_mod = train_mod[!is.na(train_mod$lcz),]
         st_crs(lcz_stars) <- st_crs(train_mod)
-   
-          ## [using ordinary kriging]
-          krige_vgm <- autofitVariogram(airT ~ lcz, as(train_mod, "Spatial"))$var_model
-          krige_mod = gstat(formula = airT ~ lcz, model = krige_vgm$var_model, data = train_mod)
-          krige_map = predict(krige_mod, newdata=lcz_stars, debug.level = 1)
-          krige_map = krige_map["var1.pred",,]
-          krige_map = raster::raster(rast(krige_map))
-          krige_map = raster::crop(krige_map, raster::extent(roi))
-          krige_map = raster::mask(krige_map, roi)
-          mydate <- data_model %>% distinct(date, .keep_all = FALSE) %>% as.data.frame()
-          mydate <- gsub("[: -]", "" , mydate$date, perl=TRUE)
-          names(krige_map) <- paste0("Krige_LCZ_", mydate)
-          
-          # Resample air map
-          air_resample = raster::resample(krige_map, build)
-          #Rename raster to "volume"
-          names(build) <- paste0("volume")
-          #Merge building with air raster
-          air_build <- as_tibble(rasterToPoints(air_resample)) %>% set_names(c("x", "y", "airT"))
-          build_df <- as_tibble(rasterToPoints(build))
-          build_model <- inner_join(build_df, air_build, by= c("x", "y")) %>%
-            mutate(hour = paste0(myhour))
-          #Formula to calculate building CO2 emissions
-          ECO2build <- function(x) {
-            x <- mutate(x, ECO2_micro = as.numeric(
-              ifelse(hour == 0, abs(-1.57*max(0, 9.9 - airT)-3.6/volume), 
-                     ifelse(hour == 1, abs(-1.73*max(0, 12.8 - airT)- 4.2/volume),
-                            ifelse(hour == 2, abs(-1.73*max(0,12 - airT)-4.64/volume),
-                                   ifelse(hour == 3, abs(-1.5*max(0, 13.1 - airT)-3.44/volume), 
-                                          ifelse(hour == 4, abs(-1.38*max(0, 12.4 - airT)-3.86/volume), 
-                                                 ifelse(hour == 5, abs(-1.7*max(0, 12.9 - airT)-2.46/volume),
-                                                        ifelse(hour == 6, abs(-2.55*max(0, 12.7 - airT)-0.77/volume), 
-                                                               ifelse(hour == 7, abs(-2.29*max(0, 10.2 - airT)-2.18/volume), 
-                                                                      ifelse(hour == 8, abs(-2.88*max(0, 12.7 - airT)- (-1.5)/volume),
-                                                                             ifelse(hour == 9, abs(-2.97*max(0, 12.3 - airT)-(-1.8)/volume), 
-                                                                                    ifelse(hour == 10, abs(-1.27*max(0, 13.3 - airT)-0.59/volume), 
-                                                                                           ifelse(hour == 11, abs(-1.45*max(0, 15.3 - airT)-0.57/volume),
-                                                                                                  ifelse(hour == 12, abs(-1.48*max(0, 15 - airT)-1.1/volume), 
-                                                                                                         ifelse(hour == 13, abs(-1.45*max(0, 13.7 - airT)-1.7/volume), 
-                                                                                                                ifelse(hour == 14, abs(-1.34*max(0, 13.2 - airT)-2.11/volume),
-                                                                                                                       ifelse(hour == 15, abs(-1.35*max(0, 13.5 - airT)-3.22/volume), 
-                                                                                                                              ifelse(hour == 16, abs(-1.36*max(0, 13 - airT)-4.39/volume), 
-                                                                                                                                     ifelse(hour == 17, abs(-1.29*max(0, 12 - airT)-5.4/volume),
-                                                                                                                                            ifelse(hour == 18, abs(-1.44*max(0, 10.6 - airT)-7.3/volume), 
-                                                                                                                                                   ifelse(hour == 19, abs(-1.44*max(0, 7 - airT)-9.77/volume), 
-                                                                                                                                                          ifelse(hour == 20, abs(-2.7*max(0, 6 - airT)-6.87/volume),
-                                                                                                                                                                 ifelse(hour == 21, abs(-1.24*max(0, 8 - airT)-4.29/volume), 
-                                                                                                                                                                        ifelse(hour == 22, abs(-0.48*max(0, 10.3 - airT)-3.68/volume),
-                                                                                                                                                                               ifelse(hour == 23, abs(-1.69*max(0, 12.4 - airT)-3.6/volume), ""))))))))))))))))))))))))))
-            
-            return(x)
-          }
-          
-          #Calculate CO2 emissions
-          ECO2B <- ECO2build(build_model)
-          ECO2B_ras <- ECO2B %>% dplyr::select(x, y, ECO2_micro)
-          ECO2B_ras = raster::rasterFromXYZ(xyz = ECO2B_ras,crs = mycrs)
-          names(ECO2B_ras) <- paste0("CO2B_", mydate)
-          qtm(ECO2B_ras)
-          return(ECO2B_ras)
+        
+        #IDW
+        idw_mod = gstat(formula = airT ~ 1, data = train_mod)
+        idw_map = predict(idw_mod, lcz_stars, debug.level = 0)
+        idw_map = idw_map["var1.pred",,]
+        idw_map <- raster(terra::rast(idw_map))
+        mydate <- data_model %>% distinct(date, .keep_all = FALSE) %>% as.data.frame()
+        mydate <- gsub("[: -]", "" , mydate$date, perl=TRUE)
+        names(idw_map) <- paste0("AirT_LCZ_",mydate)
+        
+        # Resample air map
+        air_resample = raster::resample(idw_map, build)
+        #Rename raster to "volume"
+        names(build) <- paste0("volume")
+        #Merge building with air raster
+        air_build <- as_tibble(rasterToPoints(air_resample)) %>% set_names(c("x", "y", "airT"))
+        build_df <- as_tibble(rasterToPoints(build))
+        build_model <- inner_join(build_df, air_build, by= c("x", "y")) %>%
+          mutate(hour = paste0(myhour))
+        
+        #Calculate CO2 emissions
+        ECO2B <- ECO2build(build_model)
+        ECO2T_ras <- ECO2B %>% dplyr::select(x, y, ECO2_micro)
+        ECO2T_ras <-  raster::rasterFromXYZ(xyz = ECO2T_ras,crs = mycrs)
+        names(ECO2T_ras) <- paste0("CO2B_", mydate)
+        return(ECO2T_ras)
+        
       }
-      
+
       MapHour <- pbapply::pbapply(ihour, 1, model_hour)
       UHIhour <- unlist(MapHour)
       return(UHIhour)
-      
+
     }
-    
+
     MapDay <- apply(iday, 1, model_day)
     UHIday <- unlist(MapDay)
     return(UHIday)
-  }
-  
-  if(IDW==TRUE) {
-    
-    model_day <- function(iday) {
-      
-      myday <- iday[1]
-      
-      modelday <- air_model %>%
-        mutate(day = lubridate::day(date)) %>%
-        openair::selectByDate(day = myday)
-      
-      #Downscale to hour
-      ihour <- modelday %>%
-        mutate(ihour = hour(date)) %>%
-        distinct(ihour, .keep_all = FALSE) %>%
-        expand.grid()
-      
-      model_hour <- function(ihour) {
-        
-        myhour <- ihour[1]
-        
-        data_model <- modelday %>%
-          mutate(hour = lubridate::hour(date)) %>%
-          openair::selectByDate(hour = myhour) %>% as_tibble()
-        
-        #Get station points
-        shp_stations <- data_model %>%
-          distinct(latitude, longitude, .keep_all = T) %>%
-          dplyr::select(station, latitude, longitude, airT) %>%
-          sf::st_as_sf(coords = c("longitude", "latitude"), crs = 4326) %>%
-          st_transform(crs = mycrs) 
-        
-        #Intersect shp stations with lcz shp
-        lcz_stations <- sf::st_intersection(shp_stations, lcz_shp)
-        
-        #Merge table to create a sf to model
-        lcz_poi_mod <- inner_join(lcz_poi_get,lcz_stations %>% as_tibble() %>%
-                                    dplyr::select(lcz, station, airT), by=c("lcz")) %>%
-          group_by(station) %>%
-          mutate(FID_station=cur_group_id()) %>%
-          dplyr::select(-station, -lcz)
-        
-        # Convert LCZ map to starts
-        lcz_stars <- st_as_stars(iLCZ, dimensions = "XY")
-        train_mod = st_join(lcz_poi_mod, st_as_sf(lcz_stars)) %>%
-          mutate(lcz = as.integer(lcz)) %>% 
-          dplyr::select(airT, lcz, geometry)
-        train_mod = train_mod[!is.na(train_mod$lcz),]
-        st_crs(lcz_stars) <- st_crs(train_mod)
-          
-          #IDW
-          idw_mod = gstat(formula = airT ~ 1, data = train_mod)
-          idw_map = predict(idw_mod, lcz_stars, debug.level = 0)
-          idw_map = idw_map["var1.pred",,]
-          idw_map <- raster(rast(idw_map))
-          mydate <- data_model %>% distinct(date, .keep_all = FALSE) %>% as.data.frame()
-          mydate <- gsub("[: -]", "" , mydate$date, perl=TRUE)
-          names(idw_map) <- paste0("IDW_LCZ_",mydate)
-          
-          # Resample air map
-          air_resample = raster::resample(idw_map, build)
-          #Rename raster to "volume"
-          names(build) <- paste0("volume")
-          #Merge building with air raster
-          air_build <- as_tibble(rasterToPoints(air_resample)) %>% set_names(c("x", "y", "airT"))
-          build_df <- as_tibble(rasterToPoints(build))
-          build_model <- inner_join(build_df, air_build, by= c("x", "y")) %>%
-            mutate(hour = paste0(myhour))
-          
-          #Formula to calculate building CO2 emissions
-          ECO2build <- function(x) {
-            x <- mutate(x, ECO2_micro = as.numeric(
-              ifelse(hour == 0, abs(-1.57*max(0, 9.9 - airT)-3.6/volume), 
-                     ifelse(hour == 1, abs(-1.73*max(0, 12.8 - airT)- 4.2/volume),
-                            ifelse(hour == 2, abs(-1.73*max(0,12 - airT)-4.64/volume),
-                                   ifelse(hour == 3, abs(-1.5*max(0, 13.1 - airT)-3.44/volume), 
-                                          ifelse(hour == 4, abs(-1.38*max(0, 12.4 - airT)-3.86/volume), 
-                                                 ifelse(hour == 5, abs(-1.7*max(0, 12.9 - airT)-2.46/volume),
-                                                        ifelse(hour == 6, abs(-2.55*max(0, 12.7 - airT)-0.77/volume), 
-                                                               ifelse(hour == 7, abs(-2.29*max(0, 10.2 - airT)-2.18/volume), 
-                                                                      ifelse(hour == 8, abs(-2.88*max(0, 12.7 - airT)- (-1.5)/volume),
-                                                                             ifelse(hour == 9, abs(-2.97*max(0, 12.3 - airT)-(-1.8)/volume), 
-                                                                                    ifelse(hour == 10, abs(-1.27*max(0, 13.3 - airT)-0.59/volume), 
-                                                                                           ifelse(hour == 11, abs(-1.45*max(0, 15.3 - airT)-0.57/volume),
-                                                                                                  ifelse(hour == 12, abs(-1.48*max(0, 15 - airT)-1.1/volume), 
-                                                                                                         ifelse(hour == 13, abs(-1.45*max(0, 13.7 - airT)-1.7/volume), 
-                                                                                                                ifelse(hour == 14, abs(-1.34*max(0, 13.2 - airT)-2.11/volume),
-                                                                                                                       ifelse(hour == 15, abs(-1.35*max(0, 13.5 - airT)-3.22/volume), 
-                                                                                                                              ifelse(hour == 16, abs(-1.36*max(0, 13 - airT)-4.39/volume), 
-                                                                                                                                     ifelse(hour == 17, abs(-1.29*max(0, 12 - airT)-5.4/volume),
-                                                                                                                                            ifelse(hour == 18, abs(-1.44*max(0, 10.6 - airT)-7.3/volume), 
-                                                                                                                                                   ifelse(hour == 19, abs(-1.44*max(0, 7 - airT)-9.77/volume), 
-                                                                                                                                                          ifelse(hour == 20, abs(-2.7*max(0, 6 - airT)-6.87/volume),
-                                                                                                                                                                 ifelse(hour == 21, abs(-1.24*max(0, 8 - airT)-4.29/volume), 
-                                                                                                                                                                        ifelse(hour == 22, abs(-0.48*max(0, 10.3 - airT)-3.68/volume),
-                                                                                                                                                                               ifelse(hour == 23, abs(-1.69*max(0, 12.4 - airT)-3.6/volume), ""))))))))))))))))))))))))))
-            
-            return(x)
-          }
-          
-          #Calculate CO2 emissions
-          ECO2B <- ECO2build(build_model)
-          ECO2T_ras <- ECO2B %>% dplyr::select(x, y, ECO2_micro)
-          ECO2T_ras = raster::rasterFromXYZ(xyz = ECO2T_ras,crs = mycrs)
-          names(ECO2T_ras) <- paste0("CO2B_", mydate)
-          
-          return(ECO2T_ras)
-        
-      }
-      
-      MapHour <- pbapply::pbapply(ihour, 1, model_hour)
-      UHIhour <- unlist(MapHour)
-      return(UHIhour)
-      
-    }
-    
-    MapDay <- apply(iday, 1, model_day)
-    UHIday <- unlist(MapDay)
-    return(UHIday)
-  }
   
 }
 
-job_build <- apply(idates, 1, CO2BuildLCZ) #Apply the function
-job_airT_stack <- raster::stack(unlist(job_airT)) #Or get raster stack
-qtm(job_airT_stack[[c(19)]]) #plot the map
+job_build <- apply(idates, 1, CO2BuildLCZ.idw) #Apply the function
+job_build_stack <- raster::stack(unlist(job_build)) #Or get raster stack
+qtm(job_build_stack[[c(19)]]) #plot the map
+
+
+#LCZ map
+CO2BuildLCZ.krige <- function(idates,
+                            air_df = air_UCON,
+                            lcz = lcz_map,
+                            build = build_frac,
+                            roi = study_area,
+                            spRes = 500) {
+  imonth <- idates[1]
+  iyear <- idates[2]
+  
+  #Pre=processing data
+  if(is.null(check_day)) {
+    air_model <- air_df %>%
+      openair::selectByDate(year = iyear, month = imonth) %>%
+      na.omit()
+  } else {
+    air_model <- air_df %>%
+      openair::selectByDate(year = iyear, month = imonth, day = check_day) %>%
+      na.omit()
+  }
+  
+  # Convert to spatial pixel
+  grid_stations <- raster::raster(raster::extent(roi), res = spRes)
+  raster::values(grid_stations) <- 1:raster::ncell(grid_stations)
+  raster::crs(grid_stations) <- mycrs
+  
+  iLCZ <- raster::crop(lcz, extent(roi)) %>%
+    raster::mask(roi) %>%
+    resample(grid_stations) #Resample
+  names(iLCZ) <- "lcz"
+  #Convert lcz_map to polygon
+  lcz_shp <- terra::as.polygons(rast(iLCZ)) %>%
+    st_as_sf() %>%
+    st_transform(crs = mycrs)
+  #Convert to list of polygon
+  poly_list <- lapply(st_geometry(lcz_shp), function(x)
+    st_sfc(x, crs = mycrs))
+  #Calculate areas of each polygon
+  lcz_areas <- lapply(1:length(poly_list), function(i)
+    st_area(poly_list[[i]]))
+  #Sample the number of points according to area of the polygon and convert to data.frame
+  lcz_poi <- lapply(1:length(poly_list), function(i)
+    st_sample(poly_list[[i]], size=100, prob=lcz_areas[[i]], method = "random", exact = FALSE) %>%
+      as.data.frame())
+  #Merge all dataframes and convert to sf points
+  lcz_poi <- do.call(rbind.data.frame, lcz_poi) %>%
+    st_as_sf() %>%
+    st_transform(crs = mycrs)
+  #Intersect lcz poi with lcz shp
+  lcz_poi_get <- sf::st_intersection(lcz_poi, lcz_shp)
+  
+  #Formula to calculate building CO2 emissions
+  ECO2build <- function(x) {
+    x <- mutate(x, ECO2_micro = as.numeric(
+      ifelse(hour == 0, abs(-1.57*max(0, 9.9 - airT)-3.6*volume),
+             ifelse(hour == 1, abs(-1.73*max(0, 12.8 - airT)- 4.2*volume),
+                    ifelse(hour == 2, abs(-1.73*max(0,12 - airT)-4.64*volume),
+                           ifelse(hour == 3, abs(-1.5*max(0, 13.1 - airT)-3.44*volume),
+                                  ifelse(hour == 4, abs(-1.38*max(0, 12.4 - airT)-3.86*volume),
+                                         ifelse(hour == 5, abs(-1.7*max(0, 12.9 - airT)-2.46*volume),
+                                                ifelse(hour == 6, abs(-2.55*max(0, 12.7 - airT)-0.77*volume),
+                                                       ifelse(hour == 7, abs(-2.29*max(0, 10.2 - airT)-2.18*volume),
+                                                              ifelse(hour == 8, abs(-2.88*max(0, 12.7 - airT)- (-1.5)*volume),
+                                                                     ifelse(hour == 9, abs(-2.97*max(0, 12.3 - airT)-(-1.8)*volume),
+                                                                            ifelse(hour == 10, abs(-1.27*max(0, 13.3 - airT)-0.59*volume),
+                                                                                   ifelse(hour == 11, abs(-1.45*max(0, 15.3 - airT)-0.57*volume),
+                                                                                          ifelse(hour == 12, abs(-1.48*max(0, 15 - airT)-1.1*volume),
+                                                                                                 ifelse(hour == 13, abs(-1.45*max(0, 13.7 - airT)-1.7*volume),
+                                                                                                        ifelse(hour == 14, abs(-1.34*max(0, 13.2 - airT)-2.11*volume),
+                                                                                                               ifelse(hour == 15, abs(-1.35*max(0, 13.5 - airT)-3.22*volume),
+                                                                                                                      ifelse(hour == 16, abs(-1.36*max(0, 13 - airT)-4.39*volume),
+                                                                                                                             ifelse(hour == 17, abs(-1.29*max(0, 12 - airT)-5.4*volume),
+                                                                                                                                    ifelse(hour == 18, abs(-1.44*max(0, 10.6 - airT)-7.3*volume),
+                                                                                                                                           ifelse(hour == 19, abs(-1.44*max(0, 7 - airT)-9.77*volume),
+                                                                                                                                                  ifelse(hour == 20, abs(-2.7*max(0, 6 - airT)-6.87*volume),
+                                                                                                                                                         ifelse(hour == 21, abs(-1.24*max(0, 8 - airT)-4.29*volume),
+                                                                                                                                                                ifelse(hour == 22, abs(-0.48*max(0, 10.3 - airT)-3.68*volume),
+                                                                                                                                                                       ifelse(hour == 23, abs(-1.69*max(0, 12.4 - airT)-3.6*volume), ""))))))))))))))))))))))))))
+    
+    return(x)
+  }
+  
+  #Downscale to hour
+  iday <- air_model %>%
+    mutate(iday = lubridate::day(date)) %>%
+    distinct(iday, .keep_all = FALSE) %>%
+    expand.grid()
+  
+  model_day <- function(iday) {
+    
+    myday <- iday[1]
+    
+    modelday <- air_model %>%
+      mutate(day = lubridate::day(date)) %>%
+      openair::selectByDate(day = myday)
+    
+    #Downscale to hour
+    ihour <- modelday %>%
+      mutate(ihour = hour(date)) %>%
+      distinct(ihour, .keep_all = FALSE) %>%
+      expand.grid()
+    
+    model_hour <- function(ihour) {
+      
+      myhour <- ihour[1]
+      
+      data_model <- modelday %>%
+        mutate(hour = lubridate::hour(date)) %>%
+        openair::selectByDate(hour = myhour) %>% as_tibble()
+      
+      #Get station points
+      shp_stations <- data_model %>%
+        distinct(latitude, longitude, .keep_all = T) %>%
+        dplyr::select(station, latitude, longitude, airT) %>%
+        sf::st_as_sf(coords = c("longitude", "latitude"), crs = 4326) %>%
+        st_transform(crs = mycrs)
+      
+      #Intersect shp stations with lcz shp
+      lcz_stations <- sf::st_intersection(shp_stations, lcz_shp)
+      
+      #Merge table to create a sf to model
+      lcz_poi_mod <- inner_join(lcz_poi_get,lcz_stations %>% as_tibble() %>%
+                                  dplyr::select(lcz, station, airT), by=c("lcz")) %>%
+        group_by(station) %>%
+        mutate(FID_station=cur_group_id()) %>%
+        dplyr::select(-station, -lcz)
+      
+      # Convert LCZ map to starts
+      lcz_stars <- st_as_stars(iLCZ, dimensions = "XY")
+      train_mod = st_join(lcz_poi_mod, st_as_sf(lcz_stars)) %>%
+        mutate(lcz = as.integer(lcz)) %>%
+        dplyr::select(airT, lcz, geometry)
+      train_mod = train_mod[!is.na(train_mod$lcz),]
+      st_crs(lcz_stars) <- st_crs(train_mod)
+      
+      ## [using ordinary kriging]
+      krige_vgm <- autofitVariogram(airT ~ lcz, as(train_mod, "Spatial"))$var_model
+      krige_mod = gstat(formula = airT ~ lcz, model = krige_vgm$var_model, data = train_mod)
+      krige_map = predict(krige_mod, newdata=lcz_stars, debug.level = 1)
+      krige_map = krige_map["var1.pred",,]
+      krige_map = raster::raster(rast(krige_map))
+      krige_map = raster::crop(krige_map, raster::extent(roi))
+      krige_map = raster::mask(krige_map, roi)
+      mydate <- data_model %>% distinct(date, .keep_all = FALSE) %>% as.data.frame()
+      mydate <- gsub("[: -]", "" , mydate$date, perl=TRUE)
+      names(krige_map) <- paste0("Krige_LCZ_", mydate)
+      
+      # Resample air map
+      air_resample = raster::resample(krige_map, build)
+      #Rename raster to "volume"
+      names(build) <- paste0("volume")
+      #Merge building with air raster
+      air_build <- as_tibble(rasterToPoints(air_resample)) %>% set_names(c("x", "y", "airT"))
+      build_df <- as_tibble(rasterToPoints(build))
+      build_model <- inner_join(build_df, air_build, by= c("x", "y")) %>%
+        mutate(hour = paste0(myhour))
+      
+      #Calculate CO2 emissions
+      ECO2B <- ECO2build(build_model)
+      ECO2T_ras <- ECO2B %>% dplyr::select(x, y, ECO2_micro)
+      ECO2T_ras <-  raster::rasterFromXYZ(xyz = ECO2T_ras,crs = mycrs)
+      names(ECO2T_ras) <- paste0("CO2B_", mydate)
+      return(ECO2T_ras)
+      
+    }
+    
+    MapHour <- pbapply::pbapply(ihour, 1, model_hour)
+    UHIhour <- unlist(MapHour)
+    return(UHIhour)
+    
+  }
+  
+  MapDay <- apply(iday, 1, model_day)
+  UHIday <- unlist(MapDay)
+  return(UHIday)
+  
+}
+
+job_build <- apply(idates, 1, CO2BuildLCZ.krige) #Apply the function
+job_build_stack <- raster::stack(unlist(job_build)) #Or get raster stack
+qtm(job_build_stack[[c(6)]]) #plot the map
+raster::writeRaster(job_build_stack[[c(6)]],"AirT_krigeLCZ_2019020605.TIF", format="GTiff", overwrite = TRUE)
+
 
 
 

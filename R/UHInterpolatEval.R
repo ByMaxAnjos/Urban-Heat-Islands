@@ -63,17 +63,20 @@ air_UCON <- fread("/Users/co2map/Documents/CO2CityMap/Berlin/Components/building
 city <- "Berlin"
 mycrs <- "+proj=utm +zone=33 +datum=WGS84 +units=m +no_defs"
 
-#get shp ROI
-shp_verify=osmdata::getbb(city, format_out = "sf_polygon", limit = 1)
+# Get study area polygon from OpenStreetMap data
+shp_verify <- osmdata::getbb(city, format_out = "sf_polygon", limit = 1, featuretype = "city")
 
-if(!is.null(shp_verify$geometry)) {
+# Check if polygon was obtained successfully
+if(!is.null(shp_verify$geometry) & !inherits(shp_verify, "list")) {
   study_area <- shp_verify$geometry
-  study_area <- st_make_valid(study_area) %>% 
-    st_transform(crs = mycrs)
+  study_area <- st_make_valid(study_area) %>%
+    st_as_sf() %>% 
+    st_transform(crs = "+proj=longlat +datum=WGS84 +no_defs")
 } else {
   study_area <- shp_verify$multipolygon
-  study_area <- st_make_valid(study_area) %>% 
-    st_transform(crs = mycrs)
+  study_area <- st_make_valid(study_area) %>%
+    st_as_sf() %>%
+    st_transform(crs="+proj=longlat +datum=WGS84 +no_defs")
 }
 
 qtm(study_area) #plot map
@@ -93,9 +96,9 @@ Outcome this function is a data frame with the follwing metrics:n,FAC2, MB, MGE,
 
 #define idates
 #month <- c("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec")
-imonth <- c("feb")
-iyear <- c(2019)
-check_day <- 4
+imonth <- c("jul")
+iyear <- c(2018)
+check_day <- NULL
 idates <- expand.grid(imonth, iyear)
 
 #Kriging
@@ -105,10 +108,7 @@ UHInterpolatEval.krige <- function(idates, air_df = air_UCON, roi = study_area, 
   
   imonth <- idates[1]
   iyear <- idates[2]
-
-  air_model <- air_df %>%
-    openair::selectByDate(year = iyear, month = imonth) %>% 
-    na.omit()
+  
   #Pre=processing data
   if(is.null(check_day)) {
     air_model <- air_df %>%
@@ -118,6 +118,17 @@ UHInterpolatEval.krige <- function(idates, air_df = air_UCON, roi = study_area, 
   } else {
     air_model <- air_df %>%
       openair::selectByDate(year = iyear, month = imonth, day = check_day) %>% 
+      na.omit()
+  }
+  
+  #Pre=processing data
+  if(is.null(check_day)) {
+    air_model <- air_df %>%
+      openair::selectByDate(year = iyear, month = imonth) %>%
+      na.omit()
+  } else {
+    air_model <- air_df %>%
+      openair::selectByDate(year = iyear, month = imonth, day = check_day) %>%
       na.omit()
   }
   
@@ -271,25 +282,22 @@ UHInterpolatEval.krige <- function(idates, air_df = air_UCON, roi = study_area, 
 job_krige <- pbapply::pbapply(idates, 1, UHInterpolatEval.krige)[[1]] #Apply the function 
 timePlot(job_krige, pollutant = c("RMSE", "IOA", "r", "COE", "MB", "MGE", "NMGE"), y.relation = "free")
 
-
-
-#IDW
-UHInterpolatEval.IDW <- function(idates, air_df = air_UCON, roi = study_area, spRes = 500, cv=FALSE) {
+#IDW 
+UHInterpEval.IDW <- function(idates, air_df = air_UCON, roi = study_area, 
+                                 spRes = 500, cv=FALSE) {
   imonth <- idates[1]
   iyear <- idates[2]
   
   #Pre=processing data
   if(is.null(check_day)) {
     air_model <- air_df %>%
-      openair::selectByDate(year = iyear, month = imonth) %>% 
+      openair::selectByDate(year = iyear, month = imonth) %>%
       na.omit()
-    
   } else {
     air_model <- air_df %>%
-      openair::selectByDate(year = iyear, month = imonth, day = check_day) %>% 
+      openair::selectByDate(year = iyear, month = imonth, day = check_day) %>%
       na.omit()
   }
-  
   # Convert to spatial pixel
   grid_stations <- raster::raster(raster::extent(roi), res = spRes)
   raster::values(grid_stations) <- 1:raster::ncell(grid_stations)
@@ -357,7 +365,7 @@ UHInterpolatEval.IDW <- function(idates, air_df = air_UCON, roi = study_area, sp
     return(UHIday)
     
   }
-   
+  
   else{
     
     model_day <- function(iday) {
@@ -435,18 +443,179 @@ UHInterpolatEval.IDW <- function(idates, air_df = air_UCON, roi = study_area, sp
   
 }
 
-job_idw <- apply(idates, 1, UHInterpolatEval.IDW)[[1]]
+job_idw <- apply(idates, 1, UHInterpEval.IDW)[[1]]
+write_csv(job_idw, "metrics_airt_idwjul2018.csv")
 
-timePlot(job_idw, pollutant = c("RMSE", "IOA", "r", "COE", "MB", "MGE", "NMGE"), y.relation = "free")
+#IDW-LCZ
+UHInterpEval.IDW.LCZ <- function(idates, air_df = air_UCON, roi = study_area, 
+                                 lcz = lcz_map, spRes = 100) {
+  imonth <- idates[1]
+  iyear <- idates[2]
+  
+  #Pre=processing data
+  if(is.null(check_day)) {
+    air_model <- air_df %>%
+      openair::selectByDate(year = iyear, month = imonth) %>% 
+      na.omit()
+    
+  } else {
+    air_model <- air_df %>%
+      openair::selectByDate(year = iyear, month = imonth, day = check_day) %>% 
+      na.omit()
+  }
+  
+  #Pre=processing data
+  if(is.null(check_day)) {
+    air_model <- air_df %>%
+      openair::selectByDate(year = iyear, month = imonth) %>%
+      na.omit()
+  } else {
+    air_model <- air_df %>%
+      openair::selectByDate(year = iyear, month = imonth, day = check_day) %>%
+      na.omit()
+  }
+  
+  # Convert to spatial pixel
+  grid_stations <- raster::raster(raster::extent(roi), res = spRes)
+  raster::values(grid_stations) <- 1:raster::ncell(grid_stations)
+  raster::crs(grid_stations) <- mycrs
+  
+  iLCZ <-
+    raster::crop(lcz, extent(roi)) %>%
+    raster::mask(roi) %>%
+    resample(grid_stations) #Resample
+  names(iLCZ) <- "lcz"
+  #Convert lcz_map to polygon
+  lcz_shp <- terra::as.polygons(rast(iLCZ)) %>%
+    st_as_sf() %>%
+    st_transform(crs = mycrs)
+  #Convert to list of polygon
+  poly_list <- lapply(st_geometry(lcz_shp), function(x)
+    st_sfc(x, crs = mycrs))
+  #Calculate areas of each polygon
+  lcz_areas <- lapply(1:length(poly_list), function(i)
+    st_area(poly_list[[i]]))
+  #Sample the number of points according to area of the polygon and convert to data.frame
+  lcz_poi <- lapply(1:length(poly_list), function(i)
+    st_sample(poly_list[[i]], size=100, prob=lcz_areas[[i]], method = "random", exact = FALSE) %>%
+      as.data.frame())
+  #Merge all dataframes and convert to sf points
+  lcz_poi <- do.call(rbind.data.frame, lcz_poi) %>%
+    st_as_sf() %>%
+    st_transform(crs = mycrs)
+  #Intersect lcz poi with lcz shp
+  lcz_poi_get <- sf::st_intersection(lcz_poi, lcz_shp)
 
+  #Downscale to hour
+  iday <- air_model %>%
+    mutate(iday = lubridate::day(date)) %>%
+    distinct(iday, .keep_all = FALSE) %>%
+    expand.grid()
+  
+    model_day <- function(iday) {
+      
+      myday <- iday[1]
+      
+      modelday <- air_model %>%
+        mutate(day = lubridate::day(date)) %>%
+        openair::selectByDate(day = myday)
+      
+      #Downscale to hour
+      ihour <- modelday %>%
+        mutate(ihour = hour(date)) %>%
+        distinct(ihour, .keep_all = FALSE) %>%
+        expand.grid()
+      
+      model_hour <- function(ihour) {
+        
+        myhour <- ihour[1]
+        
+        data_model <- modelday %>%
+          mutate(hour = lubridate::hour(date)) %>%
+          openair::selectByDate(hour = myhour)
+        
+        #Get station points
+        shp_stations <- data_model %>%
+          distinct(latitude, longitude, .keep_all = T) %>%
+          dplyr::select(station, latitude, longitude, airT) %>%
+          sf::st_as_sf(coords = c("longitude", "latitude"), crs = 4326) %>%
+          st_transform(crs = mycrs) %>% 
+          sf::st_intersection(roi)
+        
+        model_split <- initial_split(shp_stations, prop = .7)
+        model_train <- training(model_split)
+        model_test <- testing(model_split) %>% st_as_sf(coords = c("longitude", "latitude"), crs = 4326) %>% 
+          st_transform(crs = mycrs) %>% 
+          rename(airT_actual =  airT)
+        
+        #Intersect shp stations with lcz shp
+        lcz_stations_train <- sf::st_intersection(model_train, lcz_shp)
+        
+        #Merge table to create a sf to model
+        lcz_poi_mod <- inner_join(lcz_poi_get,lcz_stations_train %>% as_tibble() %>%
+                                    dplyr::select(lcz, station, airT), by=c("lcz")) %>%
+          group_by(station) %>%
+          #mutate(FID_station=cur_group_id()) %>%
+          dplyr::select(-station, -lcz)
+        train_mod <- lcz_poi_mod %>% st_coordinates() %>% 
+          bind_cols(lcz_poi_mod %>% as_tibble() %>% dplyr::select(-geometry)) %>% 
+          rename(x = X, y = Y)
+        
+        # Convert LCZ map to starts
+        # lcz_stars <- st_as_stars(iLCZ, dimensions = "XY")
+        # train_mod = st_join(lcz_poi_mod, st_as_sf(lcz_stars)) %>%
+        #   mutate(lcz = as.integer(lcz)) %>%
+        #   dplyr::select(airT, lcz, geometry)
+        # train_mod = train_mod[!is.na(train_mod$lcz),]
+        # st_crs(lcz_stars) <- st_crs(train_mod)
+        
+        #IDW
+        # idw_mod = gstat(formula = airT ~ 1, data = train_mod)
+        # idw_map = predict(idw_mod, lcz_stars, debug.level = 0)
+        # idw_map = idw_map["var.pred",,]
+        idw_mod <- gstat(id = "airT", formula = airT~1, locations = ~x+y, data = train_mod,
+                         nmax = 7, set = list(idp =.5))
+        idw_map <- terra::interpolate(rast(raster(my_grid)), idw_mod, debug.level = 0)
+        idw_map <- idw_map["airT.pred",,]
+        idw_map <- terra::mask(idw_map, vect(roi))
+        mydate <- data_model %>% distinct(date, .keep_all = FALSE) %>% as.data.frame()
+        mydate <- gsub("[: -]", "" , mydate$date, perl=TRUE)
+        names(idw_map) <- paste0("airT_pred")
+        
+        #Metrics
+        #This is the RMSE value for the IDW interpolation with original points testing
+        eval_df=st_join(model_test, st_as_sf(st_as_stars(idw_map))) %>% 
+          na.omit() %>% as_tibble() %>% dplyr::select(-geometry) %>% 
+          rename(airT_pred= values)
+        eval_result= data_model %>% distinct(date, .keep_all = FALSE) %>%
+          mutate(method = "LCZ-IDW") %>% 
+          bind_cols(openair::modStats(eval_df,  mod = "airT_pred", obs = "airT_actual")) %>% as_tibble() %>% 
+          dplyr::select(-default)
+        
+        return(eval_result)
+        
+      }
+      MapHour <- pbapply::pbapply(ihour, 1, model_hour)
+      UHIhour <- do.call(rbind.data.frame, MapHour)
+      return(UHIhour)
+      
+    }
+    
+    MapDay <- apply(iday, 1, model_day)
+    UHIday <- do.call(rbind.data.frame, MapDay)
+    return(UHIday)
+  
+  
+}
 
-# Plot
-tm_shape(krige_map) + 
-  tm_raster(n=10, palette = "RdBu", auto.palette.mapping = FALSE,
-            title="Predicted Air temperature \n(in degree)") + 
-  tm_shape(model_test) + tm_dots(size=0.2) +
-  tm_text("airT_actual", just="left", xmod=.5, size = 0.7) +
-  tm_legend(legend.outside=TRUE)
+job_idw.lcz <- apply(idates, 1, UHInterpEval.IDW.LCZ)[[1]]
+write_csv(job_idw.lcz, "metrics_lcz_airt_idwjul2018.csv")
 
+inner_join(job_idw, job_idw.lcz, by= "date") %>%
+  timePlot(pollutant = c("RMSE.x", "RMSE.y"), group = TRUE, lwd = 2)
 
+#timePlot(pollutant = c("RMSE", "IOA", "r", "COE", "MB", "MGE", "NMGE"), y.relation = "free")
+
+mean(job_idw$RMSE)
+mean(job_idw.lcz$RMSE)
 
