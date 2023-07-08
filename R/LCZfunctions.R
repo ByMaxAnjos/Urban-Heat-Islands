@@ -505,7 +505,7 @@ air_UCON <- fread("/Users/co2map/Documents/CO2CityMap/Berlin/Components/building
 # Get study area polygon from OpenStreetMap data
 city <- "Berlin"
 mycrs <- "+proj=utm +zone=33 +datum=WGS84 +units=m +no_defs"
-#mycrs <- 4326
+mycrs <- 4326
 shp_verify <- osmdata::getbb(city, format_out = "sf_polygon", limit = 1, featuretype = "city")
 # Check if polygon was obtained successfully
 if(!is.null(shp_verify$geometry) & !inherits(shp_verify, "list")) {
@@ -628,7 +628,8 @@ AirInterpolateLCZ.IDW <- function(idates,
         distinct(latitude, longitude, .keep_all = T) %>%
         dplyr::select(station, latitude, longitude, airT) %>%
         sf::st_as_sf(coords = c("longitude", "latitude"), crs = 4326) %>%
-        st_transform(crs = mycrs) 
+        st_transform(crs = mycrs) %>% 
+        sf::st_intersection(roi)
       
       #Intersect shp stations with lcz shp
       lcz_stations <- sf::st_intersection(shp_stations, lcz_shp)
@@ -1575,9 +1576,6 @@ CO2BuildLCZ.krige <- function(idates,
 
 job_build <- apply(idates, 1, CO2BuildLCZ.krige) #Apply the function
 job_build_stack <- raster::stack(unlist(job_build)) #Or get raster stack
-qtm(job_build_stack[[c(6)]]) #plot the map
-raster::writeRaster(job_build_stack[[c(6)]],"AirT_krigeLCZ_2019020605.TIF", format="GTiff", overwrite = TRUE)
-
 
 
 
